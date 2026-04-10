@@ -148,6 +148,7 @@ export function ScanPage() {
   }
 
   const startQrScanner = async () => {
+    console.log("Starting QR scanner...")
     setActiveMethod("qr")
     try {
       scannerRef.current = new Html5Qrcode("qr-reader")
@@ -155,14 +156,19 @@ export function ScanPage() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         async (decoded) => {
+          console.log("QR scanned:", decoded)
           await scannerRef.current?.stop()
           setActiveMethod(null)
           await handleCode(decoded)
         },
-        () => {}
+        (error) => {
+          console.log("QR error:", error)
+        }
       )
+      toast.success("Camera started - scan QR code")
     } catch (error) {
-      toast.error("Could not start camera")
+      console.log("QR start error:", error)
+      toast.error("Could not start camera. Allow camera access.")
       setActiveMethod(null)
     }
   }
@@ -177,10 +183,12 @@ export function ScanPage() {
   }
 
   const startNfcScanner = async () => {
+    console.log("Starting NFC scanner...")
     setActiveMethod("nfc")
+    toast.info("Tap your NFC tag now...")
 
     if (!("NDEFReader" in window)) {
-      toast.error("NFC not supported on this device")
+      toast.error("NFC not supported. Use Chrome on Android.")
       setActiveMethod(null)
       return
     }
@@ -188,25 +196,28 @@ export function ScanPage() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ndef = new (window as any).NDEFReader()
-      nfcAbortRef.current = new AbortController()
-
-      await ndef.scan({ signal: nfcAbortRef.current.signal })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      
       ndef.onreading = async (event: any) => {
+        console.log("NFC read:", event)
         const record = event.message.records[0]
         if (record) {
           const decoder = new TextDecoder()
           const code = decoder.decode(record.data)
-          nfcAbortRef.current?.abort()
+          console.log("NFC code:", code)
           setActiveMethod(null)
           await handleCode(code)
         }
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      
       ndef.onreadingerror = () => {
-        toast.error("NFC read error")
+        console.log("NFC error")
+        toast.error("Could not read NFC tag")
       }
+      
+      await ndef.scan()
+      console.log("NFC scanning started")
     } catch (error) {
+      console.log("NFC error:", error)
       const msg = error instanceof Error ? error.message : "NFC not available"
       toast.error(msg)
       setActiveMethod(null)
@@ -253,9 +264,16 @@ export function ScanPage() {
   })
 
   const handleMethodClick = (method: Method) => {
-    if (method === "qr") startQrScanner()
-    else if (method === "nfc") startNfcScanner()
-    else openManual()
+    console.log("Method clicked:", method)
+    if (method === "qr") {
+      toast.success("Starting QR scanner...")
+      startQrScanner()
+    } else if (method === "nfc") {
+      toast.success("Starting NFC...")
+      startNfcScanner()
+    } else {
+      openManual()
+    }
   }
 
   const listPowerbanks = mode === "return" ? returnablePowerbanks : availablePowerbanks

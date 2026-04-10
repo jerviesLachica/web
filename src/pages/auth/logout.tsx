@@ -1,31 +1,30 @@
-import { useNavigate } from "react-router-dom"
+import { useEffect } from "react"
+import { signOut } from "firebase/auth"
 import { toast } from "sonner"
 
-import { signOutCurrentUser } from "@/services/firebase/auth-service"
+import { auth, requireFirebase } from "@/services/firebase/config"
 
-export async function loader() {
-  try {
-    await signOutCurrentUser()
-    toast.success("Signed out successfully")
-  } catch {
-    toast.error("Failed to sign out")
-  }
-  return window.location.href = "/auth/login"
-}
-
-export function Component() {
-  const navigate = useNavigate()
-  
-  const handleLogout = async () => {
-    try {
-      await signOutCurrentUser()
-      toast.success("Signed out successfully")
-      navigate("/auth/login")
-    } catch {
-      toast.error("Failed to sign out")
+export function LogoutPage() {
+  useEffect(() => {
+    const doLogout = async () => {
+      try {
+        const firebaseAuth = requireFirebase(auth, "Firebase Auth")
+        await signOut(firebaseAuth)
+        toast.success("Signed out")
+        window.location.href = "/auth/login"
+      } catch (error) {
+        console.log("Logout error:", error)
+        toast.error("Failed to sign out")
+        window.location.href = "/auth/login"
+      }
     }
-  }
 
-  handleLogout()
-  return null
+    doLogout()
+  }, [])
+
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-muted-foreground">Signing out...</p>
+    </div>
+  )
 }

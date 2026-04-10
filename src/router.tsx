@@ -8,6 +8,7 @@ import { AdminLayout } from "@/routes/admin-routes"
 import { LoginPage } from "@/pages/auth/login"
 import { RegisterPage } from "@/pages/auth/register"
 import { ForgotPasswordPage } from "@/pages/auth/forgot-password"
+import { LogoutPage } from "@/pages/auth/logout"
 import { DashboardPage } from "@/pages/user/dashboard"
 import { ScanPage } from "@/pages/user/scan"
 import { HistoryPage } from "@/pages/user/history"
@@ -30,7 +31,7 @@ export const router = createBrowserRouter([
       { path: "login", element: <LoginPage /> },
       { path: "register", element: <RegisterPage /> },
       { path: "forgot-password", element: <ForgotPasswordPage /> },
-      { path: "logout", element: <div>Signing out...</div> },
+      { path: "logout", element: <LogoutPage /> },
     ],
   },
   {
