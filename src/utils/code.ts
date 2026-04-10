@@ -1,6 +1,6 @@
 import type { Powerbank, Rental } from "@/types/models"
 
-export type QrResolution =
+export type CodeResolution =
   | {
       action: "rent"
       powerbank: Powerbank
@@ -15,20 +15,23 @@ export type QrResolution =
       reason: string
     }
 
-export function resolveQrAction(
+export function resolveCodeAction(
   code: string,
   powerbanks: Powerbank[],
   rentals: Rental[]
-): QrResolution {
+): CodeResolution {
   const normalized = code.trim()
   const powerbank = powerbanks.find(
-    (item) => item.qrCode === normalized || item.id === normalized
+    (item) =>
+      item.qrCode === normalized ||
+      item.rfidTagId === normalized ||
+      item.id === normalized
   )
 
   if (!powerbank) {
     return {
       action: "invalid",
-      reason: "No powerbank matches that QR code.",
+      reason: "No powerbank matches that code.",
     }
   }
 
