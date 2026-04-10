@@ -14,6 +14,7 @@ import {
   FormField,
   FormLabel,
   FormMessage,
+  Field,
 } from "@/components/ui/form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -56,26 +57,26 @@ export function LoginPage() {
               control={form.control}
               name="email"
               render={({ field }) => (
-                <FormField>
+                <Field>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder="you@example.com" {...field} />
                   </FormControl>
                   <FormMessage />
-                </FormField>
+                </Field>
               )}
             />
             <FormField
               control={form.control}
               name="password"
               render={({ field }) => (
-                <FormField>
+                <Field>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
                     <Input type="password" placeholder="Enter your password" {...field} />
                   </FormControl>
                   <FormMessage />
-                </FormField>
+                </Field>
               )}
             />
             {form.formState.errors.root && (

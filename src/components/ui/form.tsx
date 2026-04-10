@@ -1,5 +1,5 @@
-import { Controller, useFormContext } from "react-hook-form"
-import type { Control, FieldPath, ControllerRenderProps, FieldErrors, FieldValues } from "react-hook-form"
+import { Controller } from "react-hook-form"
+import type { Control, FieldPath, ControllerRenderProps, FieldError as RHFError } from "react-hook-form"
 
 import {
   Field,
@@ -8,18 +8,18 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 
-interface FormFieldProps<T extends FieldValues> {
+interface FormFieldProps<T extends Record<string, unknown>> {
   control: Control<T>
   name: FieldPath<T>
   render: (props: {
     field: ControllerRenderProps<T, FieldPath<T>>
     fieldState: {
-      error?: FieldErrors<T>
+      error?: RHFError
     }
   }) => React.ReactElement
 }
 
-function FormField<T extends FieldValues>({
+function FormField<T extends Record<string, unknown>>({
   control,
   name,
   render,
@@ -28,9 +28,9 @@ function FormField<T extends FieldValues>({
     <Controller
       control={control}
       name={name}
-      render={({ field, fieldState }) => {
-        return render({ field, fieldState })
-      }}
+      render={({ field, fieldState }) => 
+        render({ field, fieldState })
+      }
     />
   )
 }
@@ -43,15 +43,15 @@ function FormControl({ children }: { children: React.ReactNode }) {
   return <FieldContent>{children}</FieldContent>
 }
 
-function FormLabel({ children }: { children: React.ReactNode }) {
+function FormLabelComponent({ children }: { children: React.ReactNode }) {
   return <FieldLabel>{children}</FieldLabel>
 }
 
-function FormMessage({ children }: { children?: React.ReactNode }) {
+function FormMessageComponent({ children }: { children?: React.ReactNode }) {
   if (children) {
     return <FieldError>{children}</FieldError>
   }
   return null
 }
 
-export { Form, FormControl, FormField, FormLabel, FormMessage }
+export { Form, FormControl, FormField, FormLabelComponent as FormLabel, FormMessageComponent as FormMessage, Field }

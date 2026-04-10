@@ -14,6 +14,7 @@ import {
   FormField,
   FormLabel,
   FormMessage,
+  Field,
 } from "@/components/ui/form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -55,13 +56,13 @@ export function ForgotPasswordPage() {
               control={form.control}
               name="email"
               render={({ field }) => (
-                <FormField>
+                <Field>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder="you@example.com" {...field} />
                   </FormControl>
                   <FormMessage />
-                </FormField>
+                </Field>
               )}
             />
             {form.formState.errors.root && (

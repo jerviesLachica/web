@@ -5,8 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { Html5Qrcode } from "html5-qrcode"
 import { toast } from "sonner"
 
-import { useCurrentUser, useAuthStore, type AuthState } from "@/stores/auth-store"
-import type { AuthState } from "@/stores/auth-store"
+import { useCurrentUser, useAuthStore } from "@/stores/auth-store"
 import {
   subscribePowerbanks,
   subscribeMyRentals,
@@ -24,6 +23,7 @@ import {
   FormField,
   FormLabel,
   FormMessage,
+  Field,
 } from "@/components/ui/form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -166,13 +166,13 @@ export function ScanPage() {
                 control={form.control}
                 name="code"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <FormLabel>QR Code</FormLabel>
                     <FormControl>
                       <Input placeholder="Enter powerbank code" {...field} />
                     </FormControl>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <Button type="submit" className="w-full">

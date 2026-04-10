@@ -27,8 +27,20 @@ export function UserLayout() {
     }
   }, [isAuthenticated, navigate])
 
-  if (!isAuthenticated || !user) {
-    return null
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground">Loading user...</p>
+      </div>
+    )
   }
 
   return (

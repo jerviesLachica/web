@@ -16,6 +16,8 @@ interface AuthState {
   subscribe: () => () => void
 }
 
+export type { AuthState }
+
 export const useAuthStore = create<AuthState>((set) => ({
   firebaseUser: null,
   user: null,
@@ -23,31 +25,37 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialized: false,
 
   subscribe: () => {
-    const firebaseAuth = requireFirebase(auth, "Firebase Auth")
+    try {
+      const firebaseAuth = requireFirebase(auth, "Firebase Auth")
 
-    const unsubscribeAuth = onAuthStateChanged(
-      firebaseAuth,
-      async (firebaseUser) => {
-        set({ firebaseUser, loading: true })
+      const unsubscribeAuth = onAuthStateChanged(
+        firebaseAuth,
+        async (firebaseUser) => {
+          set({ firebaseUser, loading: true })
 
-        if (!firebaseUser) {
-          set({ user: null, loading: false, initialized: true })
-          return
-        }
-
-        const unsubscribeProfile = subscribeCurrentUserProfile(
-          firebaseUser.uid,
-          (user) => {
-            set({ user, loading: false, initialized: true })
+          if (!firebaseUser) {
+            set({ user: null, loading: false, initialized: true })
+            return
           }
-        )
 
-        return unsubscribeProfile
+          const unsubscribeProfile = subscribeCurrentUserProfile(
+            firebaseUser.uid,
+            (user) => {
+              set({ user, loading: false, initialized: true })
+            }
+          )
+
+          return unsubscribeProfile
+        }
+      )
+
+      return () => {
+        unsubscribeAuth()
       }
-    )
-
-    return () => {
-      unsubscribeAuth()
+    } catch (error) {
+      console.error("Auth subscription error:", error)
+      set({ loading: false, initialized: true })
+      return () => {}
     }
   },
 }))

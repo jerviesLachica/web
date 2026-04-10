@@ -15,6 +15,7 @@ import {
   FormField,
   FormLabel,
   FormMessage,
+  Field,
 } from "@/components/ui/form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -137,72 +138,72 @@ export function InventoryPage() {
                   control={form.control}
                   name="label"
                   render={({ field }) => (
-                    <FormField>
+                    <Field>
                       <FormLabel>Label</FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
                       <FormMessage />
-                    </FormField>
+                    </Field>
                   )}
                 />
                 <FormField
                   control={form.control}
                   name="qrCode"
                   render={({ field }) => (
-                    <FormField>
+                    <Field>
                       <FormLabel>QR Code</FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
                       <FormMessage />
-                    </FormField>
+                    </Field>
                   )}
                 />
                 <FormField
                   control={form.control}
                   name="rfidTagId"
                   render={({ field }) => (
-                    <FormField>
+                    <Field>
                       <FormLabel>RFID Tag ID</FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
                       <FormMessage />
-                    </FormField>
+                    </Field>
                   )}
                 />
                 <FormField
                   control={form.control}
                   name="location"
                   render={({ field }) => (
-                    <FormField>
+                    <Field>
                       <FormLabel>Location</FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
                       <FormMessage />
-                    </FormField>
+                    </Field>
                   )}
                 />
                 <FormField
                   control={form.control}
                   name="deviceAuthUid"
                   render={({ field }) => (
-                    <FormField>
+                    <Field>
                       <FormLabel>Device Auth UID (optional)</FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
                       <FormMessage />
-                    </FormField>
+                    </Field>
                   )}
                 />
                 <FormField
                   control={form.control}
                   name="status"
                   render={({ field }) => (
-                    <FormField>
+                    <Field>
                       <FormLabel>Status</FormLabel>
                       <FormControl>
                         <select
@@ -216,7 +217,7 @@ export function InventoryPage() {
                         </select>
                       </FormControl>
                       <FormMessage />
-                    </FormField>
+                    </Field>
                   )}
                 />
                 <Button type="submit" className="w-full" disabled={saving}>

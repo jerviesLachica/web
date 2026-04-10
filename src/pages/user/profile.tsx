@@ -14,6 +14,7 @@ import {
   FormField,
   FormLabel,
   FormMessage,
+  Field,
 } from "@/components/ui/form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
@@ -105,52 +106,52 @@ export function ProfilePage() {
                 control={profileForm.control}
                 name="name"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <FormLabel>Name</FormLabel>
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <FormField
                 control={profileForm.control}
                 name="phone"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <FormLabel>Phone</FormLabel>
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <FormField
                 control={profileForm.control}
                 name="department"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <FormLabel>Department</FormLabel>
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <FormField
                 control={profileForm.control}
                 name="studentId"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <FormLabel>Student ID</FormLabel>
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <Button type="submit" disabled={saving}>
@@ -173,7 +174,7 @@ export function ProfilePage() {
                 control={preferencesForm.control}
                 name="theme"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <div className="flex items-center justify-between">
                       <FormLabel>Dark Theme</FormLabel>
                       <FormControl>
@@ -186,25 +187,25 @@ export function ProfilePage() {
                       </FormControl>
                     </div>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <FormField
                 control={preferencesForm.control}
                 name="rentalReminders"
                 render={({ field }) => (
-                  <FormField>
+                  <Field>
                     <div className="flex items-center justify-between">
                       <FormLabel>Rental Reminders</FormLabel>
                       <FormControl>
                         <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                          checked={Boolean(field.value)}
+                          onCheckedChange={(checked) => field.onChange(checked)}
                         />
                       </FormControl>
                     </div>
                     <FormMessage />
-                  </FormField>
+                  </Field>
                 )}
               />
               <Button type="submit" disabled={saving}>
