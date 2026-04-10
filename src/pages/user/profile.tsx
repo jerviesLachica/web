@@ -1,7 +1,9 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
+import { LogOutIcon } from "lucide-react"
 
 import { useCurrentUser } from "@/stores/auth-store"
 import { updateUserProfile, updateUserPreferences } from "@/services/firebase/data-service"
@@ -21,6 +23,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 
 export function ProfilePage() {
+  const navigate = useNavigate()
   const user = useCurrentUser()
   const [saving, setSaving] = useState(false)
 
@@ -215,6 +218,15 @@ export function ProfilePage() {
           </Form>
         </CardContent>
       </Card>
+
+      <Button
+        variant="destructive"
+        className="w-full"
+        onClick={() => navigate("/auth/logout")}
+      >
+        <LogOutIcon className="w-4 h-4 mr-2" />
+        Sign Out
+      </Button>
     </div>
   )
 }
