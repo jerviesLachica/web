@@ -9,6 +9,7 @@ import { useCurrentUser, useAuthStore } from "@/stores/auth-store"
 import {
   subscribePowerbanks,
   subscribeMyRentals,
+  startRental,
   returnRental,
 } from "@/services/firebase/data-service"
 import { scanSchema, type ScanValues } from "@/schemas/forms"
@@ -27,7 +28,6 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -38,28 +38,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { QrCodeIcon, ContactIcon, ListIcon, XIcon } from "lucide-react"
 
-async function scanNfc(): Promise<string | null> {
-  if (!("NDEFReader" in window)) {
-    throw new Error("NFC not supported on this device")
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ndef = new (window as any).NDEFReader()
-  await ndef.scan()
-  return new Promise<string | null>((resolve) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ndef.onreadingerror = () => resolve(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ndef.onreading = (event: any) => {
-      const record = event.message.records[0]
-      if (record) {
-        const decoder = new TextDecoder()
-        resolve(decoder.decode(record.data))
-      } else {
-        resolve(null)
-      }
-    }
-  })
+type Mode = "get" | "return"
+type Method = "qr" | "nfc" | "manual"
+
+const methodConfig = {
+  qr: {
+    icon: QrCodeIcon,
+    title: "QR Code",
+    description: "Scan the QR code on the powerbank",
+  },
+  nfc: {
+    icon: ContactIcon,
+    title: "NFC Tag",
+    description: "Tap the NFC tag on the powerbank",
+  },
+  manual: {
+    icon: ListIcon,
+    title: "Manual",
+    description: "Select from available list or enter code",
+  },
 }
 
 export function ScanPage() {
@@ -67,16 +66,25 @@ export function ScanPage() {
   const user = useCurrentUser()
   const authState = useAuthStore()
   const firebaseUser = authState.firebaseUser
-  const [scanning, setScanning] = useState(false)
-  const [nfcScanning, setNfcScanning] = useState(false)
   const [powerbanks, setPowerbanks] = useState<Powerbank[]>([])
   const [rentals, setRentals] = useState<Rental[]>([])
   const [selectedPowerbankId, setSelectedPowerbankId] = useState<string>("")
+  const [activeMethod, setActiveMethod] = useState<Method | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
+  const nfcAbortRef = useRef<AbortController | null>(null)
   const form = useForm<ScanValues>({
     resolver: zodResolver(scanSchema),
     defaultValues: { code: "" },
   })
+
+  const activeRental = rentals.find((r) => r.status === "active")
+  const mode: Mode = activeRental ? "return" : "get"
+  const availablePowerbanks = powerbanks.filter((p) => p.status === "available")
+  const returnablePowerbanks = rentals
+    .filter((r) => r.status === "active")
+    .map((r) => powerbanks.find((p) => p.id === r.powerbankId))
+    .filter((p): p is Powerbank => p !== undefined)
 
   useEffect(() => {
     if (!user) return
@@ -91,58 +99,17 @@ export function ScanPage() {
   useEffect(() => {
     return () => {
       scannerRef.current?.stop().catch(() => {})
+      nfcAbortRef.current?.abort()
     }
   }, [])
 
-  const startScanner = async () => {
-    try {
-      scannerRef.current = new Html5Qrcode("qr-reader")
-      await scannerRef.current.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decoded) => {
-          form.setValue("code", decoded)
-          handleScan(decoded)
-          scannerRef.current?.stop().then(() => setScanning(false)).catch(() => {})
-        },
-        () => {}
-      )
-      setScanning(true)
-    } catch {
-      toast.error("Could not start camera")
-    }
+  const handleCode = async (code: string) => {
+    if (!code.trim()) return
+    const resolution = resolveCodeAction(code.trim(), powerbanks, rentals)
+    await doAction(resolution)
   }
 
-  const stopScanner = async () => {
-    try {
-      if (scannerRef.current) {
-        await scannerRef.current.stop()
-      }
-    } catch {
-      // Ignore scanner errors when stopping
-    } finally {
-      setScanning(false)
-    }
-  }
-
-  const startNfc = async () => {
-    try {
-      setNfcScanning(true)
-      const code = await scanNfc()
-      if (code) {
-        await handleScan(code)
-      } else {
-        toast.error("Could not read NFC tag")
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "NFC not available"
-      toast.error(msg)
-    } finally {
-      setNfcScanning(false)
-    }
-  }
-
-  const doReturn = async (resolution: CodeResolution) => {
+  const doAction = async (resolution: CodeResolution) => {
     if (!firebaseUser) {
       toast.error("You must be signed in")
       return
@@ -153,160 +120,275 @@ export function ScanPage() {
       return
     }
 
+    setIsProcessing(true)
+
     if (resolution.action === "rent") {
-      toast.error("You don't have an active rental for this powerbank")
-      return
+      try {
+        await startRental(firebaseUser, resolution.powerbank.id)
+        toast.success("Powerbank rented!")
+        navigate("/app/dashboard")
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Failed to rent"
+        toast.error(msg)
+      }
     }
 
     if (resolution.action === "return") {
       try {
         await returnRental(firebaseUser, resolution.powerbank.id)
-        toast.success("Powerbank returned successfully!")
+        toast.success("Powerbank returned!")
         navigate("/app/dashboard")
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Failed to return"
         toast.error(msg)
       }
     }
+
+    setIsProcessing(false)
   }
 
-  const handleScan = async (code: string) => {
-    const resolution = resolveCodeAction(code, powerbanks, rentals)
-    await doReturn(resolution)
+  const startQrScanner = async () => {
+    setActiveMethod("qr")
+    try {
+      scannerRef.current = new Html5Qrcode("qr-reader")
+      await scannerRef.current.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decoded) => {
+          await scannerRef.current?.stop()
+          setActiveMethod(null)
+          await handleCode(decoded)
+        },
+        () => {}
+      )
+    } catch (error) {
+      toast.error("Could not start camera")
+      setActiveMethod(null)
+    }
   }
 
-  const handleManualSelect = async () => {
-    if (!selectedPowerbankId) {
-      toast.error("Select a powerbank")
+  const stopQrScanner = async () => {
+    try {
+      await scannerRef.current?.stop()
+    } catch {
+      // Ignore
+    }
+    setActiveMethod(null)
+  }
+
+  const startNfcScanner = async () => {
+    setActiveMethod("nfc")
+
+    if (!("NDEFReader" in window)) {
+      toast.error("NFC not supported on this device")
+      setActiveMethod(null)
       return
     }
 
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ndef = new (window as any).NDEFReader()
+      nfcAbortRef.current = new AbortController()
+
+      await ndef.scan({ signal: nfcAbortRef.current.signal })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ndef.onreading = async (event: any) => {
+        const record = event.message.records[0]
+        if (record) {
+          const decoder = new TextDecoder()
+          const code = decoder.decode(record.data)
+          nfcAbortRef.current?.abort()
+          setActiveMethod(null)
+          await handleCode(code)
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ndef.onreadingerror = () => {
+        toast.error("NFC read error")
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "NFC not available"
+      toast.error(msg)
+      setActiveMethod(null)
+    }
+  }
+
+  const stopNfcScanner = () => {
+    nfcAbortRef.current?.abort()
+    setActiveMethod(null)
+  }
+
+  const openManual = () => {
+    setActiveMethod("manual")
+  }
+
+  const closeMethod = () => {
+    if (activeMethod === "qr") stopQrScanner()
+    else if (activeMethod === "nfc") stopNfcScanner()
+    setActiveMethod(null)
+  }
+
+  const handleManualSelect = async () => {
     const powerbank = powerbanks.find((p) => p.id === selectedPowerbankId)
-    if (!powerbank) return
+    if (!powerbank) {
+      toast.error("Select a powerbank")
+      return
+    }
 
     const rental = rentals.find(
       (r) => r.powerbankId === powerbank.id && r.status === "active"
     )
 
-    if (!rental) {
-      toast.error("No active rental for this powerbank")
-      return
-    }
+    const resolution = rental
+      ? { action: "return" as const, powerbank, rental }
+      : { action: "rent" as const, powerbank }
 
-    const resolution = { action: "return" as const, powerbank, rental }
-    await doReturn(resolution)
+    await doAction(resolution)
+    closeMethod()
   }
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    await handleScan(values.code)
+  const handleManualSubmit = form.handleSubmit(async (values) => {
+    await handleCode(values.code)
+    closeMethod()
   })
 
-  const activeRentals = rentals.filter((r) => r.status === "active")
+  const handleMethodClick = (method: Method) => {
+    if (method === "qr") startQrScanner()
+    else if (method === "nfc") startNfcScanner()
+    else openManual()
+  }
+
+  const listPowerbanks = mode === "return" ? returnablePowerbanks : availablePowerbanks
 
   return (
-    <div className="max-w-md mx-auto space-y-6">
+    <div className="max-w-md mx-auto space-y-4">
       <div>
-        <h1 className="text-3xl font-bold">Return Powerbank</h1>
-        <p className="text-muted-foreground">
-          Scan QR, tap NFC, or select to return
+        <h1 className="text-2xl md:text-3xl font-bold">
+          {mode === "get" ? "Get Powerbank" : "Return Powerbank"}
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          {mode === "get"
+            ? "Select how to rent a powerbank"
+            : "Select how to return your powerbank"}
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Camera Scanner</CardTitle>
-          <CardDescription>Scan QR code on powerbank</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div
-            id="qr-reader"
-            className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
-          />
-          <div className="flex gap-2">
-            {!scanning ? (
-              <Button onClick={startScanner} className="flex-1">
-                Start Scanner
-              </Button>
-            ) : (
-              <Button onClick={stopScanner} variant="secondary" className="flex-1">
-                Stop Scanner
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>NFC Tag</CardTitle>
-          <CardDescription>Tap NFC tag on powerbank</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={startNfc}
-            disabled={nfcScanning}
-            className="w-full"
+      {Object.entries(methodConfig).map(([method, config]) => {
+        const Icon = config.icon
+        const isActive = activeMethod === method
+        return (
+          <Card
+            key={method}
+            className={`cursor-pointer transition-all ${
+              isActive ? "ring-2 ring-primary" : ""
+            } hover:bg-accent`}
+            onClick={() => !isProcessing && handleMethodClick(method as Method)}
           >
-            {nfcScanning ? "Tap powerbank now..." : "Tap to Scan NFC"}
-          </Button>
-        </CardContent>
-      </Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{config.title}</CardTitle>
+                  <p className="text-sm text-muted-foreground">{config.description}</p>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+        )
+      })}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Manual Selection</CardTitle>
-          <CardDescription>Select powerbank to return</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Select value={selectedPowerbankId} onValueChange={setSelectedPowerbankId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select powerbank" />
-            </SelectTrigger>
-            <SelectContent>
-              {activeRentals.map((rental) => {
-                const pb = powerbanks.find((p) => p.id === rental.powerbankId)
-                return pb ? (
-                  <SelectItem key={pb.id} value={pb.id}>
-                    {pb.label} - {pb.location}
-                  </SelectItem>
-                ) : null
-              })}
-            </SelectContent>
-          </Select>
-          <Button onClick={handleManualSelect} className="w-full">
-            Return Powerbank
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Manual Entry</CardTitle>
-          <CardDescription>Enter code manually</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={onSubmit} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="code"
-                render={({ field }) => (
-                  <Field>
-                    <FormLabel>Code</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter code" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </Field>
-                )}
-              />
-              <Button type="submit" className="w-full">
-                Submit
+      {activeMethod === "qr" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center justify-between">
+              Scanning...
+              <Button variant="ghost" size="sm" onClick={stopQrScanner}>
+                <XIcon className="w-4 h-4" />
               </Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div id="qr-reader" className="w-full aspect-square bg-muted rounded-lg overflow-hidden" />
+          </CardContent>
+        </Card>
+      )}
+
+      {activeMethod === "nfc" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Tap NFC tag now...</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button variant="secondary" className="w-full" onClick={stopNfcScanner}>
+              Cancel
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeMethod === "manual" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {mode === "return" ? "Select to Return" : "Select Powerbank"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Select value={selectedPowerbankId} onValueChange={setSelectedPowerbankId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select powerbank" />
+                </SelectTrigger>
+                <SelectContent>
+                  {listPowerbanks.map((powerbank) => (
+                    <SelectItem key={powerbank.id} value={powerbank.id}>
+                      {powerbank.label} - {powerbank.location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2">
+                <Button onClick={handleManualSelect} disabled={isProcessing} className="flex-1">
+                  {isProcessing ? "Processing..." : mode === "return" ? "Return" : "Rent"}
+                </Button>
+                <Button variant="secondary" onClick={closeMethod}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Enter Code Manually</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Form {...form}>
+                <form onSubmit={handleManualSubmit} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="code"
+                    render={({ field }) => (
+                      <Field>
+                        <FormLabel>Code</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter code" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </Field>
+                    )}
+                  />
+                  <Button type="submit" disabled={isProcessing} className="w-full">
+                    Submit
+                  </Button>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

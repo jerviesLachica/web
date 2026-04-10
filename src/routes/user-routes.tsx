@@ -5,7 +5,6 @@ import { userNavigation } from "@/constants/navigation"
 import { Button } from "@/components/ui/button"
 import { UserIcon, QrCodeIcon, HistoryIcon, LayoutDashboardIcon, Settings2Icon, ShieldCheckIcon, MenuIcon, LogOutIcon, HomeIcon } from "lucide-react"
 import { DashboardPage } from "@/pages/user/dashboard"
-import { GetPage } from "@/pages/user/get"
 import { ScanPage } from "@/pages/user/scan"
 import { HistoryPage } from "@/pages/user/history"
 import { ProfilePage } from "@/pages/user/profile"
@@ -152,18 +151,10 @@ export function UserLayout() {
           <Button
             variant="ghost"
             className="flex-col h-full py-1"
-            onClick={() => navigate("/app/get")}
-          >
-            <QrCodeIcon className="w-5 h-5" />
-            <span className="text-xs">Get</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className="flex-col h-full py-1"
             onClick={() => navigate("/app/scan")}
           >
             <QrCodeIcon className="w-5 h-5" />
-            <span className="text-xs">Return</span>
+            <span className="text-xs">Scan</span>
           </Button>
           <Button
             variant="ghost"
@@ -194,7 +185,6 @@ export const userRoutes = [
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "dashboard", element: <DashboardPage /> },
-      { path: "get", element: <GetPage /> },
       { path: "scan", element: <ScanPage /> },
       { path: "history", element: <HistoryPage /> },
       { path: "profile", element: <ProfilePage /> },
