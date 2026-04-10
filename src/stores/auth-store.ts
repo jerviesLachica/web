@@ -5,7 +5,7 @@ import {
 import { create } from "zustand"
 
 import { auth, requireFirebase } from "@/services/firebase/config"
-import { subscribeCurrentUserProfile } from "@/services/firebase/data-service"
+import { ensureUserProfile, getUserProfile, subscribeCurrentUserProfile } from "@/services/firebase/data-service"
 import type { AppUser } from "@/types/models"
 
 interface AuthState {
@@ -31,6 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const unsubscribeAuth = onAuthStateChanged(
         firebaseAuth,
         async (firebaseUser) => {
+          console.log("Auth state changed:", firebaseUser?.email)
           set({ firebaseUser, loading: true })
 
           if (!firebaseUser) {
@@ -40,8 +41,21 @@ export const useAuthStore = create<AuthState>((set) => ({
 
           const unsubscribeProfile = subscribeCurrentUserProfile(
             firebaseUser.uid,
-            (user) => {
-              set({ user, loading: false, initialized: true })
+            async (user) => {
+              console.log("User profile loaded:", user?.name)
+              if (!user) {
+                console.log("Profile not found, creating...")
+                try {
+                  await ensureUserProfile(firebaseUser)
+                  const newProfile = await getUserProfile(firebaseUser.uid)
+                  set({ user: newProfile, loading: false, initialized: true })
+                } catch (e) {
+                  console.error("Failed to create profile:", e)
+                  set({ loading: false, initialized: true })
+                }
+              } else {
+                set({ user, loading: false, initialized: true })
+              }
             }
           )
 

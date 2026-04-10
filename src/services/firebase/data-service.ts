@@ -196,6 +196,17 @@ export function subscribeCurrentUserProfile(
   })
 }
 
+export async function getUserProfile(userId: string): Promise<AppUser | null> {
+  const firestore = requireFirebase(db, "Firestore")
+  const snapshot = await getDoc(doc(firestore, "users", userId))
+  
+  if (!snapshot.exists()) {
+    return null
+  }
+  
+  return mapUserDocument(snapshot.id, snapshot.data())
+}
+
 export function subscribePowerbanks(onData: (items: Powerbank[]) => void) {
   const firestore = requireFirebase(db, "Firestore")
 
