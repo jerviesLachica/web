@@ -9,6 +9,7 @@ import { LoginPage } from "@/pages/auth/login"
 import { RegisterPage } from "@/pages/auth/register"
 import { ForgotPasswordPage } from "@/pages/auth/forgot-password"
 import { DashboardPage } from "@/pages/user/dashboard"
+import { GetPage } from "@/pages/user/get"
 import { ScanPage } from "@/pages/user/scan"
 import { HistoryPage } from "@/pages/user/history"
 import { ProfilePage } from "@/pages/user/profile"
@@ -39,6 +40,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "dashboard", element: <DashboardPage /> },
+      { path: "get", element: <GetPage /> },
       { path: "scan", element: <ScanPage /> },
       { path: "history", element: <HistoryPage /> },
       { path: "profile", element: <ProfilePage /> },

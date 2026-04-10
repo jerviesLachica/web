@@ -46,7 +46,7 @@ async function scanNfc(): Promise<string | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ndef = new (window as any).NDEFReader()
   await ndef.scan()
-  return new Promise<string>((resolve) => {
+  return new Promise<string | null>((resolve) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ndef.onreadingerror = () => resolve(null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

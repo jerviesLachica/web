@@ -9,7 +9,6 @@ import { useCurrentUser, useAuthStore } from "@/stores/auth-store"
 import {
   subscribePowerbanks,
   subscribeMyRentals,
-  startRental,
   returnRental,
 } from "@/services/firebase/data-service"
 import { scanSchema, type ScanValues } from "@/schemas/forms"
@@ -47,7 +46,7 @@ async function scanNfc(): Promise<string | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ndef = new (window as any).NDEFReader()
   await ndef.scan()
-  return new Promise<string>((resolve) => {
+  return new Promise<string | null>((resolve) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ndef.onreadingerror = () => resolve(null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -143,7 +142,7 @@ export function ScanPage() {
     }
   }
 
-  const doRental = async (resolution: CodeResolution) => {
+  const doReturn = async (resolution: CodeResolution) => {
     if (!firebaseUser) {
       toast.error("You must be signed in")
       return
@@ -155,14 +154,8 @@ export function ScanPage() {
     }
 
     if (resolution.action === "rent") {
-      try {
-        await startRental(firebaseUser, resolution.powerbank.id)
-        toast.success("Powerbank rented successfully!")
-        navigate("/app/dashboard")
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Failed to rent"
-        toast.error(msg)
-      }
+      toast.error("You don't have an active rental for this powerbank")
+      return
     }
 
     if (resolution.action === "return") {
@@ -179,7 +172,7 @@ export function ScanPage() {
 
   const handleScan = async (code: string) => {
     const resolution = resolveCodeAction(code, powerbanks, rentals)
-    await doRental(resolution)
+    await doReturn(resolution)
   }
 
   const handleManualSelect = async () => {
@@ -195,156 +188,96 @@ export function ScanPage() {
       (r) => r.powerbankId === powerbank.id && r.status === "active"
     )
 
-    const resolution = rental
-      ? { action: "return" as const, powerbank, rental }
-      : { action: "rent" as const, powerbank }
+    if (!rental) {
+      toast.error("No active rental for this powerbank")
+      return
+    }
 
-    await doRental(resolution)
+    const resolution = { action: "return" as const, powerbank, rental }
+    await doReturn(resolution)
   }
 
   const onSubmit = form.handleSubmit(async (values) => {
     await handleScan(values.code)
   })
 
-  const availablePowerbanks = powerbanks.filter((p) => p.status === "available")
-  const hasActiveRental = rentals.some((r) => r.status === "active")
+  const activeRentals = rentals.filter((r) => r.status === "active")
 
   return (
     <div className="max-w-md mx-auto space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Get Powerbank</h1>
+        <h1 className="text-3xl font-bold">Return Powerbank</h1>
         <p className="text-muted-foreground">
-          {hasActiveRental
-            ? "Return your powerbank"
-            : "Scan QR or NFC, or select manually"}
+          Scan QR, tap NFC, or select to return
         </p>
       </div>
 
-      {!hasActiveRental && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Camera Scanner</CardTitle>
-            <CardDescription>Scan QR code on powerbank</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div
-              id="qr-reader"
-              className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
-            />
-            <div className="flex gap-2">
-              {!scanning ? (
-                <Button onClick={startScanner} className="flex-1">
-                  Start Scanner
-                </Button>
-              ) : (
-                <Button onClick={stopScanner} variant="secondary" className="flex-1">
-                  Stop Scanner
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!hasActiveRental && (
-        <Card>
-          <CardHeader>
-            <CardTitle>NFC Tag</CardTitle>
-            <CardDescription>Tap NFC tag on powerbank</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              onClick={startNfc}
-              disabled={nfcScanning}
-              className="w-full"
-            >
-              {nfcScanning ? "Tap powerbank now..." : "Tap to Scan NFC"}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {!hasActiveRental && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Manual Selection</CardTitle>
-            <CardDescription>Select a powerbank from the list</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Select value={selectedPowerbankId} onValueChange={setSelectedPowerbankId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select powerbank" />
-              </SelectTrigger>
-              <SelectContent>
-                {availablePowerbanks.map((powerbank) => (
-                  <SelectItem key={powerbank.id} value={powerbank.id}>
-                    {powerbank.label} - {powerbank.location}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button onClick={handleManualSelect} className="w-full">
-              Rent Powerbank
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {hasActiveRental && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Return Powerbank</CardTitle>
-            <CardDescription>
-              Scan QR/NFC or select to return
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div
-              id="qr-reader"
-              className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
-            />
-            <div className="flex gap-2">
-              {!scanning ? (
-                <Button onClick={startScanner} className="flex-1">
-                  Scan QR
-                </Button>
-              ) : (
-                <Button onClick={stopScanner} variant="secondary" className="flex-1">
-                  Stop Scanner
-                </Button>
-              )}
-              <Button
-                onClick={startNfc}
-                disabled={nfcScanning}
-                variant="secondary"
-                className="flex-1"
-              >
-                {nfcScanning ? "Tap now..." : "Tap NFC"}
+      <Card>
+        <CardHeader>
+          <CardTitle>Camera Scanner</CardTitle>
+          <CardDescription>Scan QR code on powerbank</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            id="qr-reader"
+            className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
+          />
+          <div className="flex gap-2">
+            {!scanning ? (
+              <Button onClick={startScanner} className="flex-1">
+                Start Scanner
               </Button>
-            </div>
-            <Select value={selectedPowerbankId} onValueChange={setSelectedPowerbankId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select powerbank to return" />
-              </SelectTrigger>
-              <SelectContent>
-                {rentals
-                  .filter((r) => r.status === "active")
-                  .map((rental) => {
-                    const pb = powerbanks.find((p) => p.id === rental.powerbankId)
-                    return pb ? (
-                      <SelectItem key={pb.id} value={pb.id}>
-                        {pb.label} - {pb.location}
-                      </SelectItem>
-                    ) : null
-                  })}
-              </SelectContent>
-            </Select>
-            <Button onClick={handleManualSelect} className="w-full">
-              Return Powerbank
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+            ) : (
+              <Button onClick={stopScanner} variant="secondary" className="flex-1">
+                Stop Scanner
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>NFC Tag</CardTitle>
+          <CardDescription>Tap NFC tag on powerbank</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={startNfc}
+            disabled={nfcScanning}
+            className="w-full"
+          >
+            {nfcScanning ? "Tap powerbank now..." : "Tap to Scan NFC"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Manual Selection</CardTitle>
+          <CardDescription>Select powerbank to return</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Select value={selectedPowerbankId} onValueChange={setSelectedPowerbankId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select powerbank" />
+            </SelectTrigger>
+            <SelectContent>
+              {activeRentals.map((rental) => {
+                const pb = powerbanks.find((p) => p.id === rental.powerbankId)
+                return pb ? (
+                  <SelectItem key={pb.id} value={pb.id}>
+                    {pb.label} - {pb.location}
+                  </SelectItem>
+                ) : null
+              })}
+            </SelectContent>
+          </Select>
+          <Button onClick={handleManualSelect} className="w-full">
+            Return Powerbank
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

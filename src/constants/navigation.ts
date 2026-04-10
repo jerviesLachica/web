@@ -7,6 +7,7 @@ import {
   Settings2Icon,
   ShieldCheckIcon,
   UsersIcon,
+  ZapIcon,
 } from "lucide-react"
 
 import type { NavItem } from "@/types/models"
@@ -18,7 +19,12 @@ export const userNavigation: NavItem[] = [
     icon: LayoutDashboardIcon,
   },
   {
-    label: "Scan QR",
+    label: "Get",
+    path: "/app/get",
+    icon: ZapIcon,
+  },
+  {
+    label: "Return",
     path: "/app/scan",
     icon: QrCodeIcon,
   },
