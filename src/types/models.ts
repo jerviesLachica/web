@@ -5,6 +5,7 @@ export type AppTheme = "dark" | "light"
 export type PowerbankStatus =
   | "available"
   | "rented"
+  | "cooldown"
   | "maintenance"
   | "offline"
 
@@ -12,6 +13,7 @@ export type DeviceAction = "idle" | "unlock" | "lock" | "resync"
 export type RentalStatus = "active" | "returned"
 export type AuditActorType = "user" | "admin" | "device" | "system"
 export type AuditTargetType = "user" | "powerbank" | "rental" | "settings"
+export type TagStatus = "active" | "disabled"
 
 export interface UserProfileDetails {
   phone: string
@@ -22,6 +24,7 @@ export interface UserProfileDetails {
 export interface UserPreferences {
   theme: AppTheme
   rentalReminders: boolean
+  onboardingCompleted: boolean
 }
 
 export interface AppUser {
@@ -47,15 +50,25 @@ export interface DeviceControl {
 export interface Powerbank {
   id: string
   label: string
-  qrCode: string
-  rfidTagId: string
   location: string
   status: PowerbankStatus
   currentRentalId: string | null
+  cooldownEndsAt: string | null
   deviceAuthUid: string | null
   createdAt: string
   updatedAt: string
   deviceControl: DeviceControl
+}
+
+export interface RfidTag {
+  id: string
+  code: string
+  name: string
+  notes: string
+  powerbankId: string | null
+  status: TagStatus
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Rental {
@@ -82,6 +95,8 @@ export interface AuditLog {
 
 export interface SystemSettings {
   defaultRentalHours: number
+  chargeDurationMinutes: number
+  cooldownMinutes: number
   overdueGraceMinutes: number
   maintenanceMode: boolean
 }
@@ -92,14 +107,27 @@ export interface TelemetryEvent {
   timestamp: string
 }
 
+export interface TelemetryLastScan {
+  code: string
+  name: string
+  timestamp: string
+}
+
 export interface PowerbankTelemetry {
   powerbankId: string
   online: boolean
   batteryLevel: number
   lastSeenAt: string
   firmwareVersion: string
+  currentMode: string
+  relayActive: boolean
+  chargeSessionActive: boolean
+  chargeRemainingSeconds: number
+  cooldownActive: boolean
+  cooldownRemainingSeconds: number
   lastAppliedCommandVersion: number
   lastEvent: TelemetryEvent | null
+  lastScan: TelemetryLastScan | null
 }
 
 export interface NavItem {

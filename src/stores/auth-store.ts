@@ -14,6 +14,7 @@ interface AuthState {
   loading: boolean
   initialized: boolean
   subscribe: () => () => void
+  markOnboardingCompleted: () => void
 }
 
 export type { AuthState }
@@ -23,15 +24,34 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
   initialized: false,
+  markOnboardingCompleted: () => {
+    set((state) => {
+      if (!state.user) {
+        return state
+      }
+
+      return {
+        user: {
+          ...state.user,
+          preferences: {
+            ...state.user.preferences,
+            onboardingCompleted: true,
+          },
+        },
+      }
+    })
+  },
 
   subscribe: () => {
     try {
       const firebaseAuth = requireFirebase(auth, "Firebase Auth")
+      let unsubscribeProfile: (() => void) | null = null
 
       const unsubscribeAuth = onAuthStateChanged(
         firebaseAuth,
         async (firebaseUser) => {
-          console.log("Auth state changed:", firebaseUser?.email)
+          unsubscribeProfile?.()
+          unsubscribeProfile = null
           set({ firebaseUser, loading: true })
 
           if (!firebaseUser) {
@@ -39,18 +59,22 @@ export const useAuthStore = create<AuthState>((set) => ({
             return
           }
 
-          const unsubscribeProfile = subscribeCurrentUserProfile(
+          try {
+            await ensureUserProfile(firebaseUser)
+          } catch (e) {
+            set({ loading: false, initialized: true })
+            return
+          }
+
+          unsubscribeProfile = subscribeCurrentUserProfile(
             firebaseUser.uid,
             async (user) => {
-              console.log("User profile loaded:", user?.name)
               if (!user) {
-                console.log("Profile not found, creating...")
                 try {
                   await ensureUserProfile(firebaseUser)
                   const newProfile = await getUserProfile(firebaseUser.uid)
                   set({ user: newProfile, loading: false, initialized: true })
                 } catch (e) {
-                  console.error("Failed to create profile:", e)
                   set({ loading: false, initialized: true })
                 }
               } else {
@@ -58,16 +82,14 @@ export const useAuthStore = create<AuthState>((set) => ({
               }
             }
           )
-
-          return unsubscribeProfile
         }
       )
 
       return () => {
+        unsubscribeProfile?.()
         unsubscribeAuth()
       }
     } catch (error) {
-      console.error("Auth subscription error:", error)
       set({ loading: false, initialized: true })
       return () => {}
     }

@@ -13,9 +13,8 @@ export const registerSchema = z
     confirmPassword: z
       .string()
       .min(8, "Confirmation password must be at least 8 characters."),
-    phone: z.string().optional(),
-    department: z.string().optional(),
-    studentId: z.string().optional(),
+    department: z.string().min(1, "Department is required."),
+    studentId: z.string().min(1, "Student ID is required."),
   })
   .refine((value) => value.password === value.confirmPassword, {
     message: "Passwords do not match.",
@@ -39,16 +38,22 @@ export const preferencesSchema = z.object({
 })
 
 export const scanSchema = z.object({
-  code: z.string().min(1, "Enter or scan a powerbank QR code."),
+  code: z.string().min(1, "Enter a powerbank code."),
 })
 
 export const powerbankSchema = z.object({
   label: z.string().min(2, "Label must be at least 2 characters."),
-  qrCode: z.string().min(2, "QR code is required."),
-  rfidTagId: z.string().min(2, "RFID tag is required."),
   location: z.string().max(80, "Location is too long."),
   deviceAuthUid: z.string().optional(),
-  status: z.enum(["available", "rented", "maintenance", "offline"]),
+  status: z.enum(["available", "rented", "cooldown", "maintenance", "offline"]),
+})
+
+export const rfidTagSchema = z.object({
+  code: z.string().min(2, "Tag code is required."),
+  name: z.string().min(2, "Tag name is required.").max(80, "Tag name is too long."),
+  notes: z.string().max(200, "Notes are too long."),
+  powerbankId: z.string().optional(),
+  status: z.enum(["active", "disabled"]),
 })
 
 export const userStatusSchema = z.object({
@@ -60,6 +65,14 @@ export const systemSettingsSchema = z.object({
     .number()
     .min(1, "Rental hours must be at least 1.")
     .max(72, "Rental hours must be 72 or less."),
+  chargeDurationMinutes: z.coerce
+    .number()
+    .min(1, "Charge duration must be at least 1 minute.")
+    .max(240, "Charge duration must be 240 minutes or less."),
+  cooldownMinutes: z.coerce
+    .number()
+    .min(0, "Cooldown minutes cannot be negative.")
+    .max(60, "Cooldown must be 60 minutes or less."),
   overdueGraceMinutes: z.coerce
     .number()
     .min(0, "Grace minutes cannot be negative.")
@@ -74,5 +87,6 @@ export type ProfileValues = z.infer<typeof profileSchema>
 export type PreferencesValues = z.infer<typeof preferencesSchema>
 export type ScanValues = z.infer<typeof scanSchema>
 export type PowerbankValues = z.infer<typeof powerbankSchema>
+export type RfidTagValues = z.infer<typeof rfidTagSchema>
 export type UserStatusValues = z.infer<typeof userStatusSchema>
 export type SystemSettingsValues = z.infer<typeof systemSettingsSchema>

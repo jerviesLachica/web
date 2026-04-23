@@ -1,0 +1,398 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function requesterUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function requesterUserExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function requesterData() {
+      return requesterUser().data;
+    }
+
+    function isAdmin() {
+      return signedIn() && requesterUserExists() && requesterData().role == "admin";
+    }
+
+    function isActiveUser() {
+      return signedIn() && requesterUserExists() && requesterData().status == "active";
+    }
+
+    function ownsUser(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validProfile(profile) {
+      return profile is map &&
+        profile.keys().hasOnly(["phone", "department", "studentId"]) &&
+        profile.phone is string &&
+        profile.phone.size() <= 20 &&
+        profile.department is string &&
+        profile.department.size() <= 80 &&
+        profile.studentId is string &&
+        profile.studentId.size() <= 40;
+    }
+
+    function validPreferences(preferences) {
+      return preferences is map &&
+        preferences.keys().hasOnly(["theme", "rentalReminders", "onboardingCompleted"]) &&
+        preferences.theme in ["dark", "light"] &&
+        preferences.rentalReminders is bool &&
+        preferences.onboardingCompleted is bool;
+    }
+
+    function validUserDocument(data) {
+      return data.keys().hasOnly([
+          "email",
+          "name",
+          "role",
+          "status",
+          "emailVerified",
+          "activeRentalId",
+          "createdAt",
+          "updatedAt",
+          "profile",
+          "preferences"
+        ]) &&
+        data.email is string &&
+        data.email.size() <= 320 &&
+        data.name is string &&
+        data.name.size() >= 2 &&
+        data.name.size() <= 80 &&
+        data.role in ["user", "admin"] &&
+        data.status in ["active", "disabled"] &&
+        data.emailVerified is bool &&
+        (data.activeRentalId == null || data.activeRentalId is string) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        validProfile(data.profile) &&
+        validPreferences(data.preferences);
+    }
+
+    function validUserCreate(userId) {
+      return ownsUser(userId) &&
+        validUserDocument(request.resource.data) &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.role == "user" &&
+        request.resource.data.status == "active" &&
+        request.resource.data.activeRentalId == null &&
+        request.resource.data.emailVerified == request.auth.token.email_verified;
+    }
+
+    function validSelfProfileUpdate(userId) {
+      return ownsUser(userId) &&
+        validUserDocument(request.resource.data) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.emailVerified == resource.data.emailVerified &&
+        request.resource.data.activeRentalId == resource.data.activeRentalId &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "name",
+          "profile",
+          "preferences",
+          "updatedAt"
+        ]);
+    }
+
+    function validSelfRentalStateUpdate(userId) {
+      return ownsUser(userId) &&
+        validUserDocument(request.resource.data) &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.name == resource.data.name &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.profile == resource.data.profile &&
+        request.resource.data.preferences == resource.data.preferences &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "activeRentalId",
+          "emailVerified",
+          "updatedAt"
+        ]);
+    }
+
+    function validDeviceControl(control) {
+      return control is map &&
+        control.keys().hasOnly(["desiredAction", "commandVersion", "updatedAt"]) &&
+        control.desiredAction in ["idle", "unlock", "lock", "resync"] &&
+        control.commandVersion is int &&
+        control.commandVersion >= 0 &&
+        control.updatedAt is timestamp;
+    }
+
+    function validPowerbankDocument(data) {
+      return data.keys().hasOnly([
+          "label",
+          "location",
+          "qrCode",
+          "rfidTagId",
+          "status",
+          "currentRentalId",
+          "cooldownEndsAt",
+          "deviceAuthUid",
+          "createdAt",
+          "updatedAt",
+          "deviceControl"
+        ]) &&
+        data.label is string &&
+        data.label.size() >= 2 &&
+        data.label.size() <= 80 &&
+        data.location is string &&
+        data.location.size() <= 80 &&
+        (!data.keys().hasAny(["qrCode"]) || data.qrCode is string) &&
+        (!data.keys().hasAny(["rfidTagId"]) || data.rfidTagId is string) &&
+        data.status in ["available", "rented", "cooldown", "maintenance", "offline"] &&
+        (data.currentRentalId == null || data.currentRentalId is string) &&
+        (data.cooldownEndsAt == null || data.cooldownEndsAt is timestamp) &&
+        (data.deviceAuthUid == null || data.deviceAuthUid is string) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        validDeviceControl(data.deviceControl);
+    }
+
+    function validTagDocument(data) {
+      return data.keys().hasOnly(["code", "name", "notes", "powerbankId", "status", "createdAt", "updatedAt"]) &&
+        data.code is string && data.code.size() >= 2 && data.code.size() <= 120 &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+        data.notes is string && data.notes.size() <= 200 &&
+        (data.powerbankId == null || data.powerbankId is string) &&
+        data.status in ["active", "disabled"] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validPowerbankCreate() {
+      return validPowerbankDocument(request.resource.data) &&
+        request.resource.data.currentRentalId == null &&
+        request.resource.data.cooldownEndsAt == null &&
+        request.resource.data.deviceControl.desiredAction == "idle" &&
+        request.resource.data.deviceControl.commandVersion == 0;
+    }
+
+    function validRentalDocument(data) {
+      return data.keys().hasOnly([
+          "userId",
+          "powerbankId",
+          "startedAt",
+          "dueAt",
+          "returnedAt",
+          "status",
+          "notes"
+        ]) &&
+        data.userId is string &&
+        data.powerbankId is string &&
+        data.startedAt is timestamp &&
+        data.dueAt is timestamp &&
+        (data.returnedAt == null || data.returnedAt is timestamp) &&
+        data.status in ["active", "returned"] &&
+        data.notes is string &&
+        data.notes.size() <= 200;
+    }
+
+    function validRentalCreate() {
+      let powerbankAfter = getAfter(
+        /databases/$(database)/documents/powerbanks/$(request.resource.data.powerbankId)
+      );
+      let userAfter = getAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+
+      return verified() &&
+        isActiveUser() &&
+        validRentalDocument(request.resource.data) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == "active" &&
+        request.resource.data.returnedAt == null &&
+        request.resource.data.notes == "" &&
+        existsAfter(/databases/$(database)/documents/powerbanks/$(request.resource.data.powerbankId)) &&
+        existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userAfter.data.activeRentalId == request.resource.id &&
+        powerbankAfter.data.currentRentalId == request.resource.id &&
+        powerbankAfter.data.status == "rented";
+    }
+
+    function validRentalReturn() {
+      let userAfter = getAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+      let powerbankAfter = getAfter(
+        /databases/$(database)/documents/powerbanks/$(resource.data.powerbankId)
+      );
+
+      return signedIn() &&
+        resource.data.userId == request.auth.uid &&
+        validRentalDocument(request.resource.data) &&
+        resource.data.status == "active" &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.powerbankId == resource.data.powerbankId &&
+        request.resource.data.startedAt == resource.data.startedAt &&
+        request.resource.data.dueAt == resource.data.dueAt &&
+        request.resource.data.notes == resource.data.notes &&
+        request.resource.data.status == "returned" &&
+        request.resource.data.returnedAt is timestamp &&
+        existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userAfter.data.activeRentalId == null &&
+        existsAfter(/databases/$(database)/documents/powerbanks/$(resource.data.powerbankId)) &&
+        powerbankAfter.data.status == "available" &&
+        powerbankAfter.data.currentRentalId == null;
+    }
+
+    function validPowerbankRentalUpdate(powerbankId) {
+      let userAfter = getAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+      let currentRentalId = request.resource.data.currentRentalId;
+      let previousRentalId = resource.data.currentRentalId;
+
+      return verified() &&
+        isActiveUser() &&
+        validPowerbankDocument(request.resource.data) &&
+        request.resource.data.label == resource.data.label &&
+        request.resource.data.location == resource.data.location &&
+        request.resource.data.qrCode == resource.data.qrCode &&
+        request.resource.data.rfidTagId == resource.data.rfidTagId &&
+        request.resource.data.deviceAuthUid == resource.data.deviceAuthUid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.deviceControl.commandVersion == resource.data.deviceControl.commandVersion + 1 &&
+        (
+          (
+            resource.data.status == "available" &&
+            resource.data.currentRentalId == null &&
+            request.resource.data.status == "rented" &&
+            currentRentalId is string &&
+            request.resource.data.cooldownEndsAt == null &&
+            request.resource.data.deviceControl.desiredAction == "unlock" &&
+            existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            userAfter.data.activeRentalId == currentRentalId &&
+            existsAfter(/databases/$(database)/documents/rentals/$(currentRentalId)) &&
+            getAfter(/databases/$(database)/documents/rentals/$(currentRentalId)).data.userId == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/rentals/$(currentRentalId)).data.powerbankId == powerbankId &&
+            getAfter(/databases/$(database)/documents/rentals/$(currentRentalId)).data.status == "active"
+          ) ||
+          (
+            resource.data.status == "rented" &&
+            previousRentalId is string &&
+            request.resource.data.status == "cooldown" &&
+            request.resource.data.currentRentalId == null &&
+            request.resource.data.cooldownEndsAt is timestamp &&
+            request.resource.data.deviceControl.desiredAction == "lock" &&
+            existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            userAfter.data.activeRentalId == null &&
+            existsAfter(/databases/$(database)/documents/rentals/$(previousRentalId)) &&
+            getAfter(/databases/$(database)/documents/rentals/$(previousRentalId)).data.userId == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/rentals/$(previousRentalId)).data.powerbankId == powerbankId &&
+            getAfter(/databases/$(database)/documents/rentals/$(previousRentalId)).data.status == "returned"
+          )
+        );
+    }
+
+    function validAuditLog() {
+      let rentalAfter = getAfter(/databases/$(database)/documents/rentals/$(request.resource.data.targetId));
+
+      return signedIn() &&
+        request.resource.data.keys().hasOnly([
+          "actorType",
+          "actorId",
+          "action",
+          "targetType",
+          "targetId",
+          "metadata",
+          "createdAt"
+        ]) &&
+        request.resource.data.actorType in ["user", "admin"] &&
+        request.resource.data.actorId == request.auth.uid &&
+        request.resource.data.targetType == "rental" &&
+        request.resource.data.targetId is string &&
+        request.resource.data.metadata is map &&
+        request.resource.data.metadata.keys().hasOnly([
+          "powerbankId",
+          "chargeDurationMinutes",
+          "cooldownMinutes"
+        ]) &&
+        request.resource.data.metadata.powerbankId is string &&
+        (
+          !request.resource.data.metadata.keys().hasAny(["chargeDurationMinutes"]) ||
+          request.resource.data.metadata.chargeDurationMinutes is int
+        ) &&
+        (
+          !request.resource.data.metadata.keys().hasAny(["cooldownMinutes"]) ||
+          request.resource.data.metadata.cooldownMinutes is int
+        ) &&
+        request.resource.data.createdAt is timestamp &&
+        existsAfter(/databases/$(database)/documents/rentals/$(request.resource.data.targetId)) &&
+        rentalAfter.data.userId == request.auth.uid &&
+        rentalAfter.data.powerbankId == request.resource.data.metadata.powerbankId &&
+        (
+          (
+            request.resource.data.action == "rental.started" &&
+            rentalAfter.data.status == "active" &&
+            request.resource.data.metadata.keys().hasOnly(["powerbankId", "chargeDurationMinutes"])
+          ) ||
+          (
+            request.resource.data.action == "rental.returned" &&
+            rentalAfter.data.status == "returned" &&
+            request.resource.data.metadata.keys().hasOnly(["powerbankId", "cooldownMinutes"])
+          )
+        );
+    }
+
+    match /users/{userId} {
+      allow create: if validUserCreate(userId);
+
+      allow read: if ownsUser(userId) || isAdmin();
+
+      allow update: if (isAdmin() && validUserDocument(request.resource.data)) ||
+        validSelfProfileUpdate(userId) ||
+        validSelfRentalStateUpdate(userId);
+
+      allow delete: if false;
+    }
+
+    match /powerbanks/{powerbankId} {
+      allow read: if signedIn();
+
+      allow create: if isAdmin() && validPowerbankCreate();
+
+      allow update: if (isAdmin() && validPowerbankDocument(request.resource.data)) ||
+        validPowerbankRentalUpdate(powerbankId);
+
+      allow delete: if false;
+    }
+
+    match /rentals/{rentalId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.userId == request.auth.uid);
+
+      allow create: if validRentalCreate();
+
+      allow update: if isAdmin() || validRentalReturn();
+
+      allow delete: if false;
+    }
+
+    match /tags/{tagId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin() && validTagDocument(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if validAuditLog();
+      allow update, delete: if false;
+    }
+
+    match /settings/{documentId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

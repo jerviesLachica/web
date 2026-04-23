@@ -1,9 +1,11 @@
 import {
   ActivityIcon,
   BoxesIcon,
+  GitBranchIcon,
   HistoryIcon,
   LayoutDashboardIcon,
   QrCodeIcon,
+  TagIcon,
   Settings2Icon,
   ShieldCheckIcon,
   UsersIcon,
@@ -41,6 +43,11 @@ export const adminNavigation: NavItem[] = [
     icon: ShieldCheckIcon,
   },
   {
+    label: "Flowchart",
+    path: "/admin/flowchart",
+    icon: GitBranchIcon,
+  },
+  {
     label: "Inventory",
     path: "/admin/inventory",
     icon: BoxesIcon,
@@ -49,6 +56,11 @@ export const adminNavigation: NavItem[] = [
     label: "Users",
     path: "/admin/users",
     icon: UsersIcon,
+  },
+  {
+    label: "Tags",
+    path: "/admin/tags",
+    icon: TagIcon,
   },
   {
     label: "Monitoring",

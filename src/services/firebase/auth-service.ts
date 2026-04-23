@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  type AuthError,
 } from "firebase/auth"
 
 import type {
@@ -19,30 +20,81 @@ import {
   syncUserVerification,
 } from "@/services/firebase/data-service"
 
+function mapAuthError(error: unknown) {
+  const code = (error as AuthError | undefined)?.code
+
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/invalid-login-credentials":
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+      return "Invalid email or password."
+    case "auth/too-many-requests":
+      return "Too many failed sign-in attempts. Try again later."
+    case "auth/user-disabled":
+      return "This account has been disabled. Contact an administrator."
+    case "auth/network-request-failed":
+      return "Network error. Check your connection and try again."
+    case "auth/email-already-in-use":
+      return "An account with this email already exists."
+    case "auth/weak-password":
+      return "Choose a stronger password."
+    default:
+      return "Authentication failed."
+  }
+}
+
 export async function signInWithPassword(values: LoginValues) {
-  const firebaseAuth = requireFirebase(auth, "Firebase Auth")
-  await signInWithEmailAndPassword(firebaseAuth, values.email, values.password)
+  try {
+    const firebaseAuth = requireFirebase(auth, "Firebase Auth")
+    const credentials = await signInWithEmailAndPassword(
+      firebaseAuth,
+      values.email,
+      values.password
+    )
+
+    return credentials.user
+  } catch (error) {
+    throw new Error(mapAuthError(error))
+  }
 }
 
 export async function registerWithPassword(values: RegisterValues) {
-  const firebaseAuth = requireFirebase(auth, "Firebase Auth")
-  const credentials = await createUserWithEmailAndPassword(
-    firebaseAuth,
-    values.email,
-    values.password
-  )
+  try {
+    const firebaseAuth = requireFirebase(auth, "Firebase Auth")
+    const credentials = await createUserWithEmailAndPassword(
+      firebaseAuth,
+      values.email,
+      values.password
+    )
 
-  await updateProfile(credentials.user, {
-    displayName: values.name,
-  })
+    await updateProfile(credentials.user, {
+      displayName: values.name,
+    })
 
-  await ensureUserProfile(credentials.user, values.name)
-  await sendEmailVerification(credentials.user)
+    await ensureUserProfile(credentials.user, {
+      name: values.name,
+      profile: {
+        phone: "",
+        department: values.department?.trim() ?? "",
+        studentId: values.studentId?.trim() ?? "",
+      },
+    })
+    await sendEmailVerification(credentials.user)
+
+    return credentials.user
+  } catch (error) {
+    throw new Error(mapAuthError(error))
+  }
 }
 
 export async function sendResetEmail(values: ResetPasswordValues) {
-  const firebaseAuth = requireFirebase(auth, "Firebase Auth")
-  await sendPasswordResetEmail(firebaseAuth, values.email)
+  try {
+    const firebaseAuth = requireFirebase(auth, "Firebase Auth")
+    await sendPasswordResetEmail(firebaseAuth, values.email)
+  } catch (error) {
+    throw new Error(mapAuthError(error))
+  }
 }
 
 export async function resendVerificationEmail() {
@@ -64,9 +116,13 @@ export async function refreshVerificationState() {
 
   await reload(firebaseAuth.currentUser)
 
-  if (firebaseAuth.currentUser.emailVerified) {
+  const verified = firebaseAuth.currentUser.emailVerified
+
+  if (verified) {
     await syncUserVerification(firebaseAuth.currentUser.uid, true)
   }
+
+  return verified
 }
 
 export async function signOutCurrentUser() {

@@ -1,4 +1,4 @@
-import { addHours } from "date-fns"
+import { addMinutes, isAfter } from "date-fns"
 import type { User as FirebaseUser } from "firebase/auth"
 import {
   Timestamp,
@@ -25,14 +25,18 @@ import type {
   AppUser,
   AuditLog,
   Powerbank,
+  RfidTag,
   Rental,
   SystemSettings,
   UserStatus,
+  UserPreferences,
+  UserProfileDetails,
 } from "@/types/models"
 import type {
   PowerbankValues,
   PreferencesValues,
   ProfileValues,
+  RfidTagValues,
   SystemSettingsValues,
 } from "@/schemas/forms"
 
@@ -78,11 +82,10 @@ function mapPowerbankDocument(id: string, data: DocumentData): Powerbank {
   return {
     id,
     label: data.label ?? id,
-    qrCode: data.qrCode ?? "",
-    rfidTagId: data.rfidTagId ?? "",
     location: data.location ?? "",
     status: data.status ?? "available",
     currentRentalId: data.currentRentalId ?? null,
+    cooldownEndsAt: data.cooldownEndsAt ? toIso(data.cooldownEndsAt) : null,
     deviceAuthUid: data.deviceAuthUid ?? null,
     createdAt: toIso(data.createdAt),
     updatedAt: toIso(data.updatedAt),
@@ -91,6 +94,19 @@ function mapPowerbankDocument(id: string, data: DocumentData): Powerbank {
       commandVersion: Number(data.deviceControl?.commandVersion ?? 0),
       updatedAt: toIso(data.deviceControl?.updatedAt),
     },
+  }
+}
+
+function mapTagDocument(id: string, data: DocumentData): RfidTag {
+  return {
+    id,
+    code: data.code ?? id,
+    name: data.name ?? "Untitled tag",
+    notes: data.notes ?? "",
+    powerbankId: data.powerbankId ?? null,
+    status: data.status ?? "active",
+    createdAt: toIso(data.createdAt),
+    updatedAt: toIso(data.updatedAt),
   }
 }
 
@@ -124,6 +140,10 @@ function mapSettingsDocument(data?: DocumentData): SystemSettings {
   return {
     defaultRentalHours:
       Number(data?.defaultRentalHours ?? DEFAULT_SYSTEM_SETTINGS.defaultRentalHours),
+    chargeDurationMinutes:
+      Number(data?.chargeDurationMinutes ?? DEFAULT_SYSTEM_SETTINGS.chargeDurationMinutes),
+    cooldownMinutes:
+      Number(data?.cooldownMinutes ?? DEFAULT_SYSTEM_SETTINGS.cooldownMinutes),
     overdueGraceMinutes:
       Number(
         data?.overdueGraceMinutes ?? DEFAULT_SYSTEM_SETTINGS.overdueGraceMinutes
@@ -134,21 +154,53 @@ function mapSettingsDocument(data?: DocumentData): SystemSettings {
   }
 }
 
-export async function ensureUserProfile(user: FirebaseUser, name?: string) {
+interface EnsureUserProfileOptions {
+  name?: string
+  profile?: Partial<UserProfileDetails>
+  preferences?: Partial<UserPreferences>
+}
+
+function buildUserProfilePayload(
+  user: FirebaseUser,
+  options: EnsureUserProfileOptions = {},
+  existing?: DocumentData
+) {
+  const fallbackName =
+    options.name ?? existing?.name ?? user.displayName ?? user.email?.split("@")[0] ?? "New User"
+
+  return {
+    email: user.email ?? existing?.email ?? "",
+    name: fallbackName,
+    role: existing?.role ?? "user",
+    status: existing?.status ?? "active",
+    emailVerified: user.emailVerified,
+    activeRentalId: existing?.activeRentalId ?? null,
+    profile: {
+      ...DEFAULT_USER_PROFILE,
+      ...(existing?.profile ?? {}),
+      ...(options.profile ?? {}),
+    },
+    preferences: {
+      ...DEFAULT_USER_PREFERENCES,
+      ...(existing?.preferences ?? {}),
+      ...(options.preferences ?? {}),
+    },
+  }
+}
+
+export async function ensureUserProfile(
+  user: FirebaseUser,
+  options: EnsureUserProfileOptions = {}
+) {
   const firestore = requireFirebase(db, "Firestore")
   const userRef = doc(firestore, "users", user.uid)
   const snapshot = await getDoc(userRef)
 
   if (!snapshot.exists()) {
+    const payload = buildUserProfilePayload(user, options)
+
     await setDoc(userRef, {
-      email: user.email ?? "",
-      name: name ?? user.displayName ?? user.email?.split("@")[0] ?? "New User",
-      role: "user",
-      status: "active",
-      emailVerified: user.emailVerified,
-      activeRentalId: null,
-      profile: DEFAULT_USER_PROFILE,
-      preferences: DEFAULT_USER_PREFERENCES,
+      ...payload,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
@@ -156,16 +208,21 @@ export async function ensureUserProfile(user: FirebaseUser, name?: string) {
   }
 
   const current = snapshot.data()
+  const payload = buildUserProfilePayload(user, options, current)
 
-  if (current.emailVerified !== user.emailVerified || !current.name) {
+  if (
+    current.email !== payload.email ||
+    current.name !== payload.name ||
+    current.emailVerified !== payload.emailVerified ||
+    !current.profile ||
+    !current.preferences
+  ) {
     await updateDoc(userRef, {
-      emailVerified: user.emailVerified,
-      name:
-        current.name ??
-        name ??
-        user.displayName ??
-        user.email?.split("@")[0] ??
-        "New User",
+      email: payload.email,
+      name: payload.name,
+      emailVerified: payload.emailVerified,
+      profile: payload.profile,
+      preferences: payload.preferences,
       updatedAt: serverTimestamp(),
     })
   }
@@ -213,9 +270,44 @@ export function subscribePowerbanks(onData: (items: Powerbank[]) => void) {
   return onSnapshot(
     query(collection(firestore, "powerbanks"), orderBy("label")),
     (snapshot) => {
+      const expiredCooldowns = snapshot.docs.filter((item) => {
+        const data = item.data()
+        if (data.status !== "cooldown" || !data.cooldownEndsAt) {
+          return false
+        }
+
+        const cooldownEndsAt = new Date(toIso(data.cooldownEndsAt))
+        return !Number.isNaN(cooldownEndsAt.getTime()) && isAfter(new Date(), cooldownEndsAt)
+      })
+
+      if (expiredCooldowns.length > 0) {
+        void Promise.all(
+          expiredCooldowns.map((item) =>
+            updateDoc(item.ref, {
+              status: "available",
+              cooldownEndsAt: null,
+              updatedAt: serverTimestamp(),
+            })
+          )
+        ).catch((error) => {
+          console.error("Failed to release expired cooldowns", error)
+        })
+      }
+
       onData(
         snapshot.docs.map((item) => mapPowerbankDocument(item.id, item.data()))
       )
+    }
+  )
+}
+
+export function subscribeTags(onData: (items: RfidTag[]) => void) {
+  const firestore = requireFirebase(db, "Firestore")
+
+  return onSnapshot(
+    query(collection(firestore, "tags"), orderBy("name")),
+    (snapshot) => {
+      onData(snapshot.docs.map((item) => mapTagDocument(item.id, item.data())))
     }
   )
 }
@@ -260,12 +352,17 @@ export function subscribeAllRentals(onData: (items: Rental[]) => void) {
 export function subscribeUsers(onData: (items: AppUser[]) => void) {
   const firestore = requireFirebase(db, "Firestore")
 
-  return onSnapshot(
-    query(collection(firestore, "users"), orderBy("name")),
-    (snapshot) => {
-      onData(snapshot.docs.map((item) => mapUserDocument(item.id, item.data())))
-    }
-  )
+  return onSnapshot(collection(firestore, "users"), (snapshot) => {
+    const items = snapshot.docs
+      .map((item) => mapUserDocument(item.id, item.data()))
+      .sort((left, right) => {
+        const leftKey = (left.name || left.email || left.id).toLowerCase()
+        const rightKey = (right.name || right.email || right.id).toLowerCase()
+        return leftKey.localeCompare(rightKey)
+      })
+
+    onData(items)
+  })
 }
 
 export function subscribeAuditLogs(onData: (items: AuditLog[]) => void) {
@@ -300,7 +397,17 @@ export async function updateUserPreferences(
   const firestore = requireFirebase(db, "Firestore")
 
   await updateDoc(doc(firestore, "users", userId), {
-    preferences: values,
+    "preferences.theme": values.theme,
+    "preferences.rentalReminders": values.rentalReminders,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function completeUserOnboarding(userId: string) {
+  const firestore = requireFirebase(db, "Firestore")
+
+  await updateDoc(doc(firestore, "users", userId), {
+    "preferences.onboardingCompleted": true,
     updatedAt: serverTimestamp(),
   })
 }
@@ -310,37 +417,65 @@ export async function savePowerbank(
   existing?: Powerbank | null
 ) {
   const firestore = requireFirebase(db, "Firestore")
+  const payload = {
+    label: values.label.trim(),
+    location: values.location.trim(),
+    deviceAuthUid: values.deviceAuthUid?.trim() || null,
+    status: values.status,
+    updatedAt: serverTimestamp(),
+  }
 
   if (existing) {
-    await updateDoc(doc(firestore, "powerbanks", existing.id), {
-      label: values.label,
-      qrCode: values.qrCode,
-      rfidTagId: values.rfidTagId,
-      location: values.location,
-      deviceAuthUid: values.deviceAuthUid?.trim() || null,
-      status: values.status,
-      updatedAt: serverTimestamp(),
+    await setDoc(doc(firestore, "powerbanks", existing.id), {
+      ...payload,
+      currentRentalId: existing.currentRentalId,
+      cooldownEndsAt: existing.cooldownEndsAt
+        ? Timestamp.fromDate(new Date(existing.cooldownEndsAt))
+        : null,
+      createdAt: Timestamp.fromDate(new Date(existing.createdAt)),
+      deviceControl: {
+        desiredAction: existing.deviceControl.desiredAction,
+        commandVersion: existing.deviceControl.commandVersion,
+        updatedAt: Timestamp.fromDate(new Date(existing.deviceControl.updatedAt)),
+      },
     })
     return
   }
 
   const ref = doc(collection(firestore, "powerbanks"))
 
-  await setDoc(ref, {
-    label: values.label,
-    qrCode: values.qrCode,
-    rfidTagId: values.rfidTagId,
-    location: values.location,
-    status: values.status,
-    currentRentalId: null,
-    deviceAuthUid: values.deviceAuthUid?.trim() || null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    deviceControl: {
-      desiredAction: "idle",
-      commandVersion: 0,
+    await setDoc(ref, {
+      ...payload,
+      currentRentalId: null,
+      cooldownEndsAt: null,
+      createdAt: serverTimestamp(),
+      deviceControl: {
+        desiredAction: "idle",
+        commandVersion: 0,
       updatedAt: serverTimestamp(),
     },
+  })
+}
+
+export async function saveTag(values: RfidTagValues, existing?: RfidTag | null) {
+  const firestore = requireFirebase(db, "Firestore")
+  const payload = {
+    code: values.code.trim(),
+    name: values.name.trim(),
+    notes: values.notes.trim(),
+    powerbankId: values.powerbankId?.trim() || null,
+    status: values.status,
+    updatedAt: serverTimestamp(),
+  }
+
+  if (existing) {
+    await updateDoc(doc(firestore, "tags", existing.id), payload)
+    return
+  }
+
+  await setDoc(doc(collection(firestore, "tags")), {
+    ...payload,
+    createdAt: serverTimestamp(),
   })
 }
 
@@ -360,6 +495,8 @@ export async function saveSystemSettings(values: SystemSettingsValues) {
     doc(firestore, "settings", "system"),
     {
       defaultRentalHours: values.defaultRentalHours,
+      chargeDurationMinutes: values.chargeDurationMinutes,
+      cooldownMinutes: values.cooldownMinutes,
       overdueGraceMinutes: values.overdueGraceMinutes,
       maintenanceMode: values.maintenanceMode,
       updatedAt: serverTimestamp(),
@@ -414,12 +551,16 @@ export async function startRental(user: FirebaseUser, powerbankId: string) {
     }
 
     if (powerbank.status !== "available") {
+      if (powerbank.status === "cooldown") {
+        throw new Error("That powerbank is cooling down. Try again in a few minutes.")
+      }
+
       throw new Error("That powerbank is not available right now.")
     }
 
     const startedAt = Timestamp.now()
     const dueAt = Timestamp.fromDate(
-      addHours(startedAt.toDate(), settings.defaultRentalHours)
+      addMinutes(startedAt.toDate(), settings.chargeDurationMinutes)
     )
     const nextCommandVersion = powerbank.deviceControl.commandVersion + 1
 
@@ -442,6 +583,7 @@ export async function startRental(user: FirebaseUser, powerbankId: string) {
     transaction.update(powerbankRef, {
       status: "rented",
       currentRentalId: rentalRef.id,
+      cooldownEndsAt: null,
       updatedAt: serverTimestamp(),
       deviceControl: {
         desiredAction: "unlock",
@@ -458,6 +600,7 @@ export async function startRental(user: FirebaseUser, powerbankId: string) {
       targetId: rentalRef.id,
       metadata: {
         powerbankId,
+        chargeDurationMinutes: settings.chargeDurationMinutes,
       },
       createdAt: serverTimestamp(),
     })
@@ -468,11 +611,13 @@ export async function returnRental(user: FirebaseUser, powerbankId: string) {
   const firestore = requireFirebase(db, "Firestore")
   const userRef = doc(firestore, "users", user.uid)
   const powerbankRef = doc(firestore, "powerbanks", powerbankId)
+  const settingsRef = doc(firestore, "settings", "system")
   const auditRef = doc(collection(firestore, "auditLogs"))
 
   await runTransaction(firestore, async (transaction) => {
     const userSnapshot = await transaction.get(userRef)
     const powerbankSnapshot = await transaction.get(powerbankRef)
+    const settingsSnapshot = await transaction.get(settingsRef)
 
     if (!userSnapshot.exists()) {
       throw new Error("User profile is missing.")
@@ -487,13 +632,14 @@ export async function returnRental(user: FirebaseUser, powerbankId: string) {
       powerbankSnapshot.id,
       powerbankSnapshot.data()
     )
+    const settings = mapSettingsDocument(settingsSnapshot.data())
 
     if (!profile.activeRentalId) {
       throw new Error("You do not have an active rental to return.")
     }
 
     if (powerbank.currentRentalId !== profile.activeRentalId) {
-      throw new Error("That QR code does not match your active rental.")
+      throw new Error("That powerbank does not match your active rental.")
     }
 
     const rentalRef = doc(firestore, "rentals", profile.activeRentalId)
@@ -504,6 +650,7 @@ export async function returnRental(user: FirebaseUser, powerbankId: string) {
     }
 
     const nextCommandVersion = powerbank.deviceControl.commandVersion + 1
+    const cooldownEndsAt = Timestamp.fromDate(addMinutes(new Date(), settings.cooldownMinutes))
 
     transaction.update(rentalRef, {
       returnedAt: Timestamp.now(),
@@ -516,8 +663,9 @@ export async function returnRental(user: FirebaseUser, powerbankId: string) {
     })
 
     transaction.update(powerbankRef, {
-      status: "available",
+      status: "cooldown",
       currentRentalId: null,
+      cooldownEndsAt,
       updatedAt: serverTimestamp(),
       deviceControl: {
         desiredAction: "lock",
@@ -534,6 +682,8 @@ export async function returnRental(user: FirebaseUser, powerbankId: string) {
       targetId: rentalRef.id,
       metadata: {
         powerbankId,
+        cooldownMinutes: settings.cooldownMinutes,
+        nextStatus: "cooldown",
       },
       createdAt: serverTimestamp(),
     })

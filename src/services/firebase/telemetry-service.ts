@@ -18,6 +18,12 @@ export function subscribeTelemetry(onData: (items: PowerbankTelemetry[]) => void
           ? value.lastSeenAt
           : new Date().toISOString(),
       firmwareVersion: String(value.firmwareVersion ?? "unknown"),
+      currentMode: String(value.currentMode ?? "idle"),
+      relayActive: Boolean(value.relayActive),
+      chargeSessionActive: Boolean(value.chargeSessionActive),
+      chargeRemainingSeconds: Number(value.chargeRemainingSeconds ?? 0),
+      cooldownActive: Boolean(value.cooldownActive),
+      cooldownRemainingSeconds: Number(value.cooldownRemainingSeconds ?? 0),
       lastAppliedCommandVersion: Number(value.lastAppliedCommandVersion ?? 0),
       lastEvent:
         value.lastEvent && typeof value.lastEvent === "object"
@@ -28,6 +34,17 @@ export function subscribeTelemetry(onData: (items: PowerbankTelemetry[]) => void
               ),
               timestamp: String(
                 (value.lastEvent as Record<string, unknown>).timestamp ??
+                  new Date().toISOString()
+              ),
+            }
+          : null,
+      lastScan:
+        value.lastScan && typeof value.lastScan === "object"
+          ? {
+              code: String((value.lastScan as Record<string, unknown>).code ?? ""),
+              name: String((value.lastScan as Record<string, unknown>).name ?? ""),
+              timestamp: String(
+                (value.lastScan as Record<string, unknown>).timestamp ??
                   new Date().toISOString()
               ),
             }

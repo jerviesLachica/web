@@ -2,19 +2,17 @@ import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Html5Qrcode } from "html5-qrcode"
 import { toast } from "sonner"
 
-import { useCurrentUser, useAuthStore } from "@/stores/auth-store"
-import {
-  subscribePowerbanks,
-  subscribeMyRentals,
-  startRental,
-  returnRental,
-} from "@/services/firebase/data-service"
+import { useAuthStore } from "@/stores/auth-store"
+import { useInventoryStore } from "@/stores/inventory-store"
+import { useIsOnline } from "@/stores/ui-store"
+import { useRentalStore } from "@/stores/rental-store"
+import { startRental, returnRental } from "@/services/firebase/data-service"
 import { scanSchema, type ScanValues } from "@/schemas/forms"
 import { resolveCodeAction, type CodeResolution } from "@/utils/code"
-import type { Powerbank, Rental } from "@/types/models"
+import { readNfcTagCode, supportsWebNfc } from "@/utils/nfc"
+import type { Powerbank } from "@/types/models"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -38,17 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { QrCodeIcon, ContactIcon, ListIcon, XIcon } from "lucide-react"
+import { ContactIcon, ListIcon } from "lucide-react"
 
 type Mode = "get" | "return"
-type Method = "qr" | "nfc" | "manual"
+type Method = "nfc" | "manual"
 
 const methodConfig = {
-  qr: {
-    icon: QrCodeIcon,
-    title: "QR Code",
-    description: "Scan the QR code on the powerbank",
-  },
   nfc: {
     icon: ContactIcon,
     title: "NFC Tag",
@@ -63,16 +56,17 @@ const methodConfig = {
 
 export function ScanPage() {
   const navigate = useNavigate()
-  const user = useCurrentUser()
   const authState = useAuthStore()
   const firebaseUser = authState.firebaseUser
-  const [powerbanks, setPowerbanks] = useState<Powerbank[]>([])
-  const [rentals, setRentals] = useState<Rental[]>([])
+  const powerbanks = useInventoryStore((state) => state.powerbanks)
+  const tags = useInventoryStore((state) => state.tags)
+  const rentals = useRentalStore((state) => state.myRentals)
+  const isOnline = useIsOnline()
   const [selectedPowerbankId, setSelectedPowerbankId] = useState<string>("")
   const [activeMethod, setActiveMethod] = useState<Method | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const scannerRef = useRef<Html5Qrcode | null>(null)
   const nfcAbortRef = useRef<AbortController | null>(null)
+  const webNfcSupported = supportsWebNfc()
   const form = useForm<ScanValues>({
     resolver: zodResolver(scanSchema),
     defaultValues: { code: "" },
@@ -87,29 +81,27 @@ export function ScanPage() {
     .filter((p): p is Powerbank => p !== undefined)
 
   useEffect(() => {
-    if (!user) return
-    const unsubPowerbanks = subscribePowerbanks(setPowerbanks)
-    const unsubRentals = subscribeMyRentals(user.id, setRentals)
     return () => {
-      unsubPowerbanks()
-      unsubRentals()
-    }
-  }, [user])
-
-  useEffect(() => {
-    return () => {
-      scannerRef.current?.stop().catch(() => {})
       nfcAbortRef.current?.abort()
     }
   }, [])
 
   const handleCode = async (code: string) => {
     if (!code.trim()) return
-    const resolution = resolveCodeAction(code.trim(), powerbanks, rentals)
+    if (!isOnline) {
+      toast.error("Reconnect before starting or returning a rental.")
+      return
+    }
+    const resolution = resolveCodeAction(code.trim(), powerbanks, tags, rentals)
     await doAction(resolution)
   }
 
   const doAction = async (resolution: CodeResolution) => {
+    if (!isOnline) {
+      toast.error("Reconnect before starting or returning a rental.")
+      return
+    }
+
     if (!firebaseUser) {
       toast.error("You must be signed in")
       return
@@ -147,75 +139,22 @@ export function ScanPage() {
     setIsProcessing(false)
   }
 
-  const startQrScanner = async () => {
-    console.log("Starting QR scanner...")
-    setActiveMethod("qr")
-    try {
-      scannerRef.current = new Html5Qrcode("qr-reader")
-      await scannerRef.current.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decoded) => {
-          console.log("QR scanned:", decoded)
-          await scannerRef.current?.stop()
-          setActiveMethod(null)
-          await handleCode(decoded)
-        },
-        (error) => {
-          console.log("QR error:", error)
-        }
-      )
-      toast.success("Camera started - scan QR code")
-    } catch (error) {
-      console.log("QR start error:", error)
-      toast.error("Could not start camera. Allow camera access.")
-      setActiveMethod(null)
-    }
-  }
-
-  const stopQrScanner = async () => {
-    try {
-      await scannerRef.current?.stop()
-    } catch {
-      // Ignore
-    }
-    setActiveMethod(null)
-  }
-
   const startNfcScanner = async () => {
     console.log("Starting NFC scanner...")
     setActiveMethod("nfc")
-    toast.info("Tap your NFC tag now...")
+    toast.info("Tap your NFC or RFID tag now...")
 
-    if (!("NDEFReader" in window)) {
-      toast.error("NFC not supported. Use Chrome on Android.")
+    if (!webNfcSupported) {
+      toast.error("Phone NFC is not supported here. Use Chrome on Android or Manual mode.")
       setActiveMethod(null)
       return
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ndef = new (window as any).NDEFReader()
-      
-      ndef.onreading = async (event: any) => {
-        console.log("NFC read:", event)
-        const record = event.message.records[0]
-        if (record) {
-          const decoder = new TextDecoder()
-          const code = decoder.decode(record.data)
-          console.log("NFC code:", code)
-          setActiveMethod(null)
-          await handleCode(code)
-        }
-      }
-      
-      ndef.onreadingerror = () => {
-        console.log("NFC error")
-        toast.error("Could not read NFC tag")
-      }
-      
-      await ndef.scan()
-      console.log("NFC scanning started")
+      const code = await readNfcTagCode()
+      console.log("NFC code:", code)
+      setActiveMethod(null)
+      await handleCode(code)
     } catch (error) {
       console.log("NFC error:", error)
       const msg = error instanceof Error ? error.message : "NFC not available"
@@ -234,8 +173,7 @@ export function ScanPage() {
   }
 
   const closeMethod = () => {
-    if (activeMethod === "qr") stopQrScanner()
-    else if (activeMethod === "nfc") stopNfcScanner()
+    if (activeMethod === "nfc") stopNfcScanner()
     setActiveMethod(null)
   }
 
@@ -265,11 +203,8 @@ export function ScanPage() {
 
   const handleMethodClick = (method: Method) => {
     console.log("Method clicked:", method)
-    if (method === "qr") {
-      toast.success("Starting QR scanner...")
-      startQrScanner()
-    } else if (method === "nfc") {
-      toast.success("Starting NFC...")
+    if (method === "nfc") {
+      toast.success("Starting phone NFC scan...")
       startNfcScanner()
     } else {
       openManual()
@@ -279,15 +214,19 @@ export function ScanPage() {
   const listPowerbanks = mode === "return" ? returnablePowerbanks : availablePowerbanks
 
   return (
-    <div className="max-w-md mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold">
+    <div className="mx-auto max-w-md space-y-4 text-white">
+      <div className="space-y-2">
+        <p className="text-xs uppercase tracking-[0.28em] text-white/42">Scan</p>
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {mode === "get" ? "Get Powerbank" : "Return Powerbank"}
         </h1>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-white/55">
           {mode === "get"
             ? "Select how to rent a powerbank"
             : "Select how to return your powerbank"}
+        </p>
+        <p className="text-xs text-white/42">
+          Phone NFC works only when the browser exposes a readable tag UID or NDEF text. If your RFID tag is not detected, use Manual mode or the ESP32 reader.
         </p>
       </div>
 
@@ -298,18 +237,22 @@ export function ScanPage() {
           <Card
             key={method}
             className={`cursor-pointer transition-all ${
-              isActive ? "ring-2 ring-primary" : ""
-            } hover:bg-accent`}
+              isActive ? "ring-2 ring-white/20" : ""
+            } bg-white/[0.04] hover:bg-white/[0.07]`}
             onClick={() => !isProcessing && handleMethodClick(method as Method)}
           >
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08]">
                   <Icon className="w-5 h-5" />
                 </div>
                 <div>
                   <CardTitle className="text-base">{config.title}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{config.description}</p>
+                  <p className="text-sm text-white/48">
+                    {method === "nfc" && !webNfcSupported
+                      ? "Use Android Chrome with NFC enabled, or use Manual mode"
+                      : config.description}
+                  </p>
                 </div>
               </div>
             </CardHeader>
@@ -317,28 +260,15 @@ export function ScanPage() {
         )
       })}
 
-      {activeMethod === "qr" && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center justify-between">
-              Scanning...
-              <Button variant="ghost" size="sm" onClick={stopQrScanner}>
-                <XIcon className="w-4 h-4" />
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div id="qr-reader" className="w-full aspect-square bg-muted rounded-lg overflow-hidden" />
-          </CardContent>
-        </Card>
-      )}
-
       {activeMethod === "nfc" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Tap NFC tag now...</CardTitle>
-          </CardHeader>
+          <Card className="bg-white/[0.04]">
+            <CardHeader>
+              <CardTitle className="text-base">Tap phone-readable tag now...</CardTitle>
+            </CardHeader>
           <CardContent>
+            <p className="mb-4 text-sm text-white/55">
+              This uses your phone browser NFC reader. If the tag is only readable by the MFRC522 hardware and not exposed by Web NFC, it will not be detected here.
+            </p>
             <Button variant="secondary" className="w-full" onClick={stopNfcScanner}>
               Cancel
             </Button>
@@ -348,7 +278,7 @@ export function ScanPage() {
 
       {activeMethod === "manual" && (
         <div className="space-y-4">
-          <Card>
+          <Card className="bg-white/[0.04]">
             <CardHeader>
               <CardTitle className="text-base">
                 {mode === "return" ? "Select to Return" : "Select Powerbank"}
@@ -378,7 +308,7 @@ export function ScanPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-white/[0.04]">
             <CardHeader>
               <CardTitle className="text-base">Enter Code Manually</CardTitle>
             </CardHeader>

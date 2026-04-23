@@ -1,8 +1,8 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app"
 import {
-  browserLocalPersistence,
   connectAuthEmulator,
   getAuth,
+  inMemoryPersistence,
   setPersistence,
   type Auth,
 } from "firebase/auth"
@@ -13,7 +13,6 @@ import {
 } from "firebase/database"
 import {
   connectFirestoreEmulator,
-  enableMultiTabIndexedDbPersistence,
   getFirestore,
   type Firestore,
 } from "firebase/firestore"
@@ -46,8 +45,7 @@ if (isFirebaseConfigured) {
   db = getFirestore(firebaseApp)
   rtdb = getDatabase(firebaseApp)
 
-  setPersistence(auth, browserLocalPersistence).catch(() => undefined)
-  enableMultiTabIndexedDbPersistence(db).catch(() => undefined)
+  setPersistence(auth, inMemoryPersistence).catch(() => undefined)
 
   if (useFirebaseEmulators && !emulatorsConnected) {
     connectAuthEmulator(auth, "http://127.0.0.1:9099", {

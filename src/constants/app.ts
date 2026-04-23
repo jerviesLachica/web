@@ -13,6 +13,8 @@ export const FIREBASE_SETUP_MESSAGE =
 
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   defaultRentalHours: 6,
+  chargeDurationMinutes: 30,
+  cooldownMinutes: 5,
   overdueGraceMinutes: 15,
   maintenanceMode: false,
 }
@@ -26,4 +28,5 @@ export const DEFAULT_USER_PROFILE: UserProfileDetails = {
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   theme: "dark",
   rentalReminders: true,
+  onboardingCompleted: false,
 }

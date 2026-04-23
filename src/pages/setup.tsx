@@ -12,7 +12,7 @@ export function SetupPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            To configure Firebase, create a <code>.env</code> file in the web directory with the following variables:
+            To configure Firebase, create a local <code>web/.env</code> file from <code>web/.env.example</code>. Do not commit environment files to source control.
           </p>
           <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
 {`VITE_FIREBASE_API_KEY=your_api_key

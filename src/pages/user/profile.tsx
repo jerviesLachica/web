@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -7,6 +7,7 @@ import { LogOutIcon } from "lucide-react"
 
 import { useCurrentUser } from "@/stores/auth-store"
 import { updateUserProfile, updateUserPreferences } from "@/services/firebase/data-service"
+import { ensureReminderPermission } from "@/services/rental-reminder-service"
 import { profileSchema, preferencesSchema, type ProfileValues, type PreferencesValues } from "@/schemas/forms"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,6 +46,23 @@ export function ProfilePage() {
     },
   })
 
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    profileForm.reset({
+      name: user.name,
+      phone: user.profile.phone,
+      department: user.profile.department,
+      studentId: user.profile.studentId,
+    })
+    preferencesForm.reset({
+      theme: user.preferences.theme,
+      rentalReminders: user.preferences.rentalReminders,
+    })
+  }, [preferencesForm, profileForm, user])
+
   const onProfileSubmit = profileForm.handleSubmit(async (values) => {
     if (!user) return
     setSaving(true)
@@ -62,6 +80,11 @@ export function ProfilePage() {
     if (!user) return
     setSaving(true)
     try {
+      const permission = await ensureReminderPermission(values.rentalReminders)
+      if (permission === "denied" && values.rentalReminders) {
+        toast.error("Browser notifications are blocked. Enable them to receive reminders.")
+      }
+
       await updateUserPreferences(user.id, values)
       toast.success("Preferences updated")
     } catch (error) {
@@ -74,20 +97,21 @@ export function ProfilePage() {
   if (!user) return null
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Profile</h1>
-        <p className="text-muted-foreground">Manage your account settings</p>
+    <div className="mx-auto max-w-2xl space-y-6 text-white">
+      <div className="space-y-2">
+        <p className="text-xs uppercase tracking-[0.28em] text-white/42">Profile</p>
+        <h1 className="text-3xl font-semibold tracking-tight">Profile</h1>
+        <p className="text-white/55">Manage your account settings</p>
       </div>
 
-      <Card>
+      <Card className="bg-white/[0.04]">
         <CardHeader>
           <CardTitle>Account Information</CardTitle>
           <CardDescription>Your basic profile details</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.08]">
               <span className="text-2xl font-bold">{user.name.charAt(0).toUpperCase()}</span>
             </div>
             <div>
@@ -165,7 +189,7 @@ export function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="bg-white/[0.04]">
         <CardHeader>
           <CardTitle>Preferences</CardTitle>
           <CardDescription>Customize your experience</CardDescription>
@@ -173,26 +197,6 @@ export function ProfilePage() {
         <CardContent>
           <Form {...preferencesForm}>
             <form onSubmit={onPreferencesSubmit} className="space-y-4">
-              <FormField
-                control={preferencesForm.control}
-                name="theme"
-                render={({ field }) => (
-                  <Field>
-                    <div className="flex items-center justify-between">
-                      <FormLabel>Dark Theme</FormLabel>
-                      <FormControl>
-                        <Switch
-                          checked={field.value === "dark"}
-                          onCheckedChange={(checked) =>
-                            field.onChange(checked ? "dark" : "light")
-                          }
-                        />
-                      </FormControl>
-                    </div>
-                    <FormMessage />
-                  </Field>
-                )}
-              />
               <FormField
                 control={preferencesForm.control}
                 name="rentalReminders"
@@ -207,6 +211,9 @@ export function ProfilePage() {
                         />
                       </FormControl>
                     </div>
+                    <p className="text-sm text-muted-foreground">
+                      Get a browser notification 30 minutes before your active rental is due.
+                    </p>
                     <FormMessage />
                   </Field>
                 )}
@@ -221,7 +228,7 @@ export function ProfilePage() {
 
       <Button
         variant="destructive"
-        className="w-full"
+        className="w-full rounded-2xl"
         onClick={() => navigate("/auth/logout")}
       >
         <LogOutIcon className="w-4 h-4 mr-2" />

@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react"
+import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { subscribeUsers, updateManagedUserStatus } from "@/services/firebase/data-service"
 import type { AppUser, UserStatus } from "@/types/models"
+import { useIsOnline } from "@/stores/ui-store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -17,6 +19,9 @@ import {
 
 export function UsersPage() {
   const [users, setUsers] = useState<AppUser[]>([])
+  const [query, setQuery] = useState("")
+  const deferredQuery = useDeferredValue(query)
+  const isOnline = useIsOnline()
 
   useEffect(() => {
     const unsub = subscribeUsers(setUsers)
@@ -24,6 +29,11 @@ export function UsersPage() {
   }, [])
 
   const handleToggleStatus = async (user: AppUser) => {
+    if (!isOnline) {
+      toast.error("Reconnect to manage users.")
+      return
+    }
+
     const newStatus: UserStatus = user.status === "active" ? "disabled" : "active"
     try {
       await updateManagedUserStatus(user.id, newStatus)
@@ -33,14 +43,29 @@ export function UsersPage() {
     }
   }
 
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = deferredQuery.trim().toLowerCase()
+
+    return users.filter((user) => {
+      return (
+        !normalizedQuery ||
+        user.name.toLowerCase().includes(normalizedQuery) ||
+        user.email.toLowerCase().includes(normalizedQuery) ||
+        user.profile.department.toLowerCase().includes(normalizedQuery) ||
+        user.profile.studentId.toLowerCase().includes(normalizedQuery)
+      )
+    })
+  }, [deferredQuery, users])
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Users</h1>
-        <p className="text-muted-foreground">Manage registered users</p>
+    <div className="space-y-6 text-white">
+      <div className="space-y-2">
+        <p className="text-xs uppercase tracking-[0.28em] text-white/42">Admin</p>
+        <h1 className="text-3xl font-semibold tracking-tight">Users</h1>
+        <p className="text-white/55">Manage registered users</p>
       </div>
 
-      <Card>
+      <Card className="bg-white/[0.04]">
         <CardHeader>
           <CardTitle>All Users</CardTitle>
           <CardDescription>
@@ -48,12 +73,24 @@ export function UsersPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              No users registered yet.
+          <div className="mb-4">
+            <Input
+              placeholder="Search by name, email, department, or student ID"
+              value={query}
+              onChange={(event) => {
+                const value = event.target.value
+                startTransition(() => setQuery(value))
+              }}
+            />
+          </div>
+          {filteredUsers.length === 0 ? (
+            <p className="py-8 text-center text-white/50">
+              {users.length === 0
+                ? "No users registered yet."
+                : "No users match the current search."}
             </p>
           ) : (
-            <Table>
+            <Table className="text-white">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -65,7 +102,7 @@ export function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell className="font-medium">{user.name}</TableCell>
                     <TableCell>{user.email}</TableCell>
@@ -92,6 +129,7 @@ export function UsersPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={!isOnline}
                         onClick={() => handleToggleStatus(user)}
                       >
                         {user.status === "active" ? "Disable" : "Enable"}

@@ -1,4 +1,4 @@
-import { format, formatDistanceToNowStrict } from "date-fns"
+import { format, formatDistanceToNowStrict, isPast } from "date-fns"
 
 export function toDate(value?: string | Date | null) {
   if (!value) {
@@ -26,6 +26,16 @@ export function formatDurationSince(value?: string | Date | null) {
   const date = toDate(value)
 
   if (!date) {
+    return "0m"
+  }
+
+  return formatDistanceToNowStrict(date, { addSuffix: false })
+}
+
+export function formatDurationUntil(value?: string | Date | null) {
+  const date = toDate(value)
+
+  if (!date || isPast(date)) {
     return "0m"
   }
 

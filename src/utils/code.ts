@@ -1,4 +1,5 @@
-import type { Powerbank, Rental } from "@/types/models"
+import type { Powerbank, Rental, RfidTag } from "@/types/models"
+import { normalizeRfidTagCode } from "@/utils/nfc"
 
 export type CodeResolution =
   | {
@@ -18,14 +19,15 @@ export type CodeResolution =
 export function resolveCodeAction(
   code: string,
   powerbanks: Powerbank[],
+  tags: RfidTag[],
   rentals: Rental[]
 ): CodeResolution {
-  const normalized = code.trim()
+  const normalized = normalizeRfidTagCode(code)
+  const matchedTag = tags.find(
+    (item) => item.status === "active" && normalizeRfidTagCode(item.code) === normalized
+  )
   const powerbank = powerbanks.find(
-    (item) =>
-      item.qrCode === normalized ||
-      item.rfidTagId === normalized ||
-      item.id === normalized
+    (item) => item.id === (matchedTag?.powerbankId ?? normalized) || item.id === normalized
   )
 
   if (!powerbank) {

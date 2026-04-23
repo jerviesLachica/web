@@ -1,73 +1,57 @@
-# React + TypeScript + Vite
+# Sunsaver Web MVP
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Firebase-backed powerbank rental management for a school prototype. This web app replaces the original Android-only flow with a responsive React application that supports:
 
-Currently, two official plugins are available:
+- email/password auth with verification
+- user and admin dashboards
+- inventory CRUD
+- QR/NFC/manual rental and return flows
+- Firestore-backed rental transactions
+- Realtime Database telemetry for ESP32 status
+- installable PWA behavior
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Stack
 
-## React Compiler
+- React 18 + TypeScript + Vite 7
+- Tailwind CSS v4 + shadcn/ui
+- Firebase Auth, Firestore, Realtime Database, Hosting
+- Zustand for session state
+- React Hook Form + Zod
+- Recharts
+- Vitest + Playwright
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Setup
 
-## Expanding the ESLint configuration
+1. Copy `.env.example` to `.env`
+2. Fill in the Firebase web configuration values
+3. Install dependencies
+4. Start the app
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Scripts
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
+npm run build
+npm run test
+npm run test:e2e
+npm run emulators
 ```
+
+## Firebase Files
+
+- `firebase.json`
+- `firestore.rules`
+- `database.rules.json`
+- [`docs/operator-guide.md`](./docs/operator-guide.md)
+
+## MVP Notes
+
+- Spark-only architecture: no Cloud Functions
+- Rentals are free to use
+- Overdue state is derived in the app from `dueAt`
+- Push notifications and background sync are deferred
