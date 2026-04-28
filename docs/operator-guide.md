@@ -4,6 +4,14 @@
 
 Create `.env` from `.env.example` in the `web` directory and fill in the Firebase web app values from Project Settings.
 
+For this project, `VITE_FIREBASE_DATABASE_URL` should point at the existing regional Realtime Database instance URL:
+
+```env
+VITE_FIREBASE_DATABASE_URL=https://website-9e530-default-rtdb.asia-southeast1.firebasedatabase.app
+```
+
+If you look it up in Firebase Console, copy the regional `firebasedatabase.app` URL for the instance instead of guessing an older `.firebaseio.com` URL.
+
 Optional emulator mode:
 
 ```env
@@ -34,14 +42,16 @@ Use the Firebase values already used by the web app:
 ```cpp
 static const char* FIREBASE_API_KEY = "AIzaSyAtUdn--e52ChbI-Cft_X_5l0ToZJ0Fffw";
 static const char* FIREBASE_PROJECT_ID = "website-9e530";
-static const char* FIREBASE_RTDB_URL = "https://website-9e530.firebaseio.com";
+static const char* FIREBASE_RTDB_URL = "https://website-9e530-default-rtdb.asia-southeast1.firebasedatabase.app";
 ```
 
 Point `POWERBANK_ID` at the matching Firestore document ID. The current seeded prototype record is:
 
 ```cpp
-static const char* POWERBANK_ID = "KFi6dGOMgxODJhIXJphA";
+static const char* POWERBANK_ID = "pb-esp32-001";
 ```
+
+That ID must match the Firestore document ID exactly because the firmware reads `powerbanks/{POWERBANK_ID}` and publishes telemetry under `/telemetry/{POWERBANK_ID}`.
 
 Keep Wi-Fi SSID/password and the device email/password local to the firmware source.
 

@@ -4,6 +4,7 @@ export type AppTheme = "dark" | "light"
 
 export type PowerbankStatus =
   | "available"
+  | "in_use"
   | "rented"
   | "cooldown"
   | "maintenance"
@@ -14,6 +15,21 @@ export type RentalStatus = "active" | "returned"
 export type AuditActorType = "user" | "admin" | "device" | "system"
 export type AuditTargetType = "user" | "powerbank" | "rental" | "settings"
 export type TagStatus = "active" | "disabled"
+export type BatteryEstimateState = "estimated" | "out_of_range" | "sensor_unavailable"
+export type RfidLogSource =
+  | "rfid"
+  | "web_nfc"
+  | "manual"
+  | "firebase"
+  | "command"
+  | "system"
+export type RfidLogEventType = "tap" | "session_start" | "session_end" | "command" | "status"
+
+export interface DeviceControlCommandMetadata {
+  source: RfidLogSource
+  tagCode: string | null
+  tagName: string | null
+}
 
 export interface UserProfileDetails {
   phone: string
@@ -41,7 +57,7 @@ export interface AppUser {
   preferences: UserPreferences
 }
 
-export interface DeviceControl {
+export interface DeviceControl extends DeviceControlCommandMetadata {
   desiredAction: DeviceAction
   commandVersion: number
   updatedAt: string
@@ -58,6 +74,14 @@ export interface Powerbank {
   createdAt: string
   updatedAt: string
   deviceControl: DeviceControl
+  deviceState?: {
+    mode?: string
+    inventoryStatus?: PowerbankStatus | null
+    batteryEstimateState?: BatteryEstimateState | null
+    updatedAt?: string | null
+    lastEventType?: string | null
+    lastEventResult?: string | null
+  }
 }
 
 export interface RfidTag {
@@ -93,6 +117,23 @@ export interface AuditLog {
   createdAt: string
 }
 
+export interface RfidTapLog {
+  id: string
+  powerbankId: string
+  source: RfidLogSource
+  eventType: RfidLogEventType
+  result: string
+  tagCode: string | null
+  tagName: string | null
+  batteryPercentBefore: number | null
+  batteryPercentAfter: number | null
+  batteryPercentLost: number | null
+  batteryPercentRetained: number | null
+  sessionStartedAt: string | null
+  sessionEndedAt: string | null
+  createdAt: string
+}
+
 export interface SystemSettings {
   defaultRentalHours: number
   chargeDurationMinutes: number
@@ -116,7 +157,16 @@ export interface TelemetryLastScan {
 export interface PowerbankTelemetry {
   powerbankId: string
   online: boolean
-  batteryLevel: number
+  batteryLevel: number | null
+  batteryVoltage: number | null
+  batteryBusVoltage: number | null
+  batteryShuntVoltageMv: number | null
+  batteryRawBusVoltage: number | null
+  batteryRawShuntVoltageMv: number | null
+  batteryRawLoadVoltage: number | null
+  batterySensorAvailable: boolean
+  batteryEstimateState: BatteryEstimateState
+  inventoryStatus: PowerbankStatus | null
   lastSeenAt: string
   firmwareVersion: string
   currentMode: string

@@ -17,7 +17,20 @@ export function AdminLayout() {
   const isAdmin = useIsAdmin()
   const isVerified = useIsVerified()
   const user = useCurrentUser()
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuOpenPath, setMenuOpenPath] = useState<string | null>(null)
+
+  const menuOpen = menuOpenPath === location.pathname
+
+  const toggleMenu = () => {
+    setMenuOpenPath((currentPath) =>
+      currentPath === location.pathname ? null : location.pathname
+    )
+  }
+
+  const navigateAndClose = (path: string) => {
+    setMenuOpenPath(null)
+    navigate(path)
+  }
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -35,10 +48,6 @@ export function AdminLayout() {
     }
   }, [isAuthenticated, isAdmin, isVerified, navigate])
 
-  useEffect(() => {
-    setMenuOpen(false)
-  }, [location.pathname])
-
   if (!isAuthenticated || !isAdmin || !isVerified || !user) {
     return null
   }
@@ -50,16 +59,16 @@ export function AdminLayout() {
       <header className="border-b border-white/10 bg-black/20 backdrop-blur-xl md:hidden">
         <div className="flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setMenuOpen(!menuOpen)}>
+            <Button variant="ghost" size="icon" onClick={toggleMenu}>
               <MenuIcon className="w-5 h-5" />
             </Button>
             <span className="text-lg font-semibold tracking-tight">Admin</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/app")}>
+            <Button variant="ghost" size="icon" onClick={() => navigateAndClose("/app")}>
               <HomeIcon className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => navigate("/auth/logout")}>
+            <Button variant="ghost" size="icon" onClick={() => navigateAndClose("/auth/logout")}>
               <LogOutIcon className="w-4 h-4" />
             </Button>
           </div>
@@ -74,7 +83,7 @@ export function AdminLayout() {
                   key={item.path}
                   variant={isActive ? "secondary" : "ghost"}
                   className="w-full justify-start"
-                  onClick={() => navigate(item.path)}
+                  onClick={() => navigateAndClose(item.path)}
                 >
                   <Icon className="w-4 h-4 mr-2" />
                   {item.label}
@@ -97,7 +106,7 @@ export function AdminLayout() {
                     key={item.path}
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigate(item.path)}
+                    onClick={() => navigateAndClose(item.path)}
                   >
                     <Icon className="w-4 h-4 mr-2" />
                     {item.label}
@@ -108,7 +117,7 @@ export function AdminLayout() {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-white/55">{user.name}</span>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/app")}>
+            <Button variant="ghost" size="sm" onClick={() => navigateAndClose("/app")}>
               <UserIcon className="w-4 h-4 mr-2" />
               User App
             </Button>
@@ -134,7 +143,7 @@ export function AdminLayout() {
                   "flex h-full flex-col py-1",
                   isActive ? "text-white" : "text-white/65",
                 ].join(" ")}
-                onClick={() => navigate(item.path)}
+                onClick={() => navigateAndClose(item.path)}
               >
                 <Icon className="w-5 h-5" />
                 <span className="text-[11px]">{item.label}</span>
@@ -144,7 +153,7 @@ export function AdminLayout() {
           <Button
             variant="ghost"
             className="flex h-full flex-col py-1 text-white/65"
-            onClick={() => navigate("/app/profile")}
+            onClick={() => navigateAndClose("/app/profile")}
           >
             <UserIcon className="w-5 h-5" />
             <span className="text-[11px]">Profile</span>

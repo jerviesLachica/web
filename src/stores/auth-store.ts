@@ -61,7 +61,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
           try {
             await ensureUserProfile(firebaseUser)
-          } catch (e) {
+          } catch {
             set({ loading: false, initialized: true })
             return
           }
@@ -74,7 +74,7 @@ export const useAuthStore = create<AuthState>((set) => ({
                   await ensureUserProfile(firebaseUser)
                   const newProfile = await getUserProfile(firebaseUser.uid)
                   set({ user: newProfile, loading: false, initialized: true })
-                } catch (e) {
+                } catch {
                   set({ loading: false, initialized: true })
                 }
               } else {
@@ -89,7 +89,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         unsubscribeProfile?.()
         unsubscribeAuth()
       }
-    } catch (error) {
+    } catch {
       set({ loading: false, initialized: true })
       return () => {}
     }

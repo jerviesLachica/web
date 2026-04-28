@@ -6,10 +6,15 @@ import { Plus, Pencil } from "lucide-react"
 
 import { savePowerbank } from "@/services/firebase/data-service"
 import { powerbankSchema, type PowerbankValues } from "@/schemas/forms"
-import type { Powerbank } from "@/types/models"
+import type { Powerbank, PowerbankStatus, PowerbankTelemetry } from "@/types/models"
 import { useInventoryStore } from "@/stores/inventory-store"
+import { useTelemetryStore } from "@/stores/telemetry-store"
 import { useIsOnline } from "@/stores/ui-store"
 import { formatDateTime } from "@/utils/date"
+import {
+  getEffectivePowerbankStatus,
+  getPowerbankStatusLabel,
+} from "@/utils/powerbank"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -53,10 +58,39 @@ const statusColors: Record<string, "default" | "secondary" | "destructive"> = {
   offline: "secondary",
 }
 
+function toEditableStatus(status: PowerbankStatus): PowerbankValues["status"] {
+  return status === "in_use" ? "rented" : status
+}
+
+function getInventoryDisplayStatus(
+  powerbank: Powerbank,
+  telemetry?: PowerbankTelemetry
+): PowerbankStatus {
+  if (telemetry?.cooldownActive || telemetry?.inventoryStatus === "cooldown") {
+    return "cooldown"
+  }
+
+  if (
+    telemetry?.chargeSessionActive ||
+    telemetry?.inventoryStatus === "in_use" ||
+    telemetry?.inventoryStatus === "rented"
+  ) {
+    return "rented"
+  }
+
+  if (telemetry?.inventoryStatus === "offline") {
+    return "offline"
+  }
+
+  return getEffectivePowerbankStatus(powerbank)
+}
+
 export function InventoryPage() {
   const powerbanks = useInventoryStore((state) => state.powerbanks)
   const loading = useInventoryStore((state) => state.loading)
   const subscribeInventory = useInventoryStore((state) => state.subscribe)
+  const telemetry = useTelemetryStore((state) => state.items)
+  const subscribeTelemetryData = useTelemetryStore((state) => state.subscribe)
   const isOnline = useIsOnline()
   const [editing, setEditing] = useState<Powerbank | null>(null)
   const [open, setOpen] = useState(false)
@@ -67,10 +101,12 @@ export function InventoryPage() {
 
   useEffect(() => {
     const unsubscribe = subscribeInventory()
+    const unsubscribeTelemetry = subscribeTelemetryData()
     return () => {
       unsubscribe()
+      unsubscribeTelemetry()
     }
-  }, [subscribeInventory])
+  }, [subscribeInventory, subscribeTelemetryData])
 
   const form = useForm<PowerbankValues>({
     resolver: zodResolver(powerbankSchema),
@@ -106,25 +142,28 @@ export function InventoryPage() {
     const normalizedQuery = deferredQuery.trim().toLowerCase()
 
     return powerbanks.filter((powerbank) => {
+      const telemetryItem = telemetry.find((item) => item.powerbankId === powerbank.id)
+      const effectiveStatus = getInventoryDisplayStatus(powerbank, telemetryItem)
       const matchesQuery =
         !normalizedQuery ||
         powerbank.label.toLowerCase().includes(normalizedQuery) ||
         powerbank.location.toLowerCase().includes(normalizedQuery)
 
-      const matchesStatus =
-        statusFilter === "all" ? true : powerbank.status === statusFilter
+      const matchesStatus = statusFilter === "all" ? true : effectiveStatus === statusFilter
 
       return matchesQuery && matchesStatus
     })
-  }, [deferredQuery, powerbanks, statusFilter])
+  }, [deferredQuery, powerbanks, statusFilter, telemetry])
 
   const handleEdit = (powerbank: Powerbank) => {
     setEditing(powerbank)
+    const telemetryItem = telemetry.find((item) => item.powerbankId === powerbank.id)
+    const effectiveStatus = getInventoryDisplayStatus(powerbank, telemetryItem)
     form.reset({
       label: powerbank.label,
       location: powerbank.location,
       deviceAuthUid: powerbank.deviceAuthUid ?? "",
-      status: powerbank.status,
+      status: toEditableStatus(effectiveStatus),
     })
     setOpen(true)
   }
@@ -304,32 +343,37 @@ export function InventoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredPowerbanks.map((powerbank) => (
-                  <TableRow key={powerbank.id}>
-                    <TableCell className="font-medium">{powerbank.label}</TableCell>
-                    <TableCell>{powerbank.location}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusColors[powerbank.status]}>
-                        {powerbank.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {powerbank.cooldownEndsAt
-                        ? formatDateTime(powerbank.cooldownEndsAt)
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={!isOnline}
-                        onClick={() => handleEdit(powerbank)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filteredPowerbanks.map((powerbank) => {
+                  const telemetryItem = telemetry.find((item) => item.powerbankId === powerbank.id)
+                  const effectiveStatus = getInventoryDisplayStatus(powerbank, telemetryItem)
+
+                  return (
+                    <TableRow key={powerbank.id}>
+                      <TableCell className="font-medium">{powerbank.label}</TableCell>
+                      <TableCell>{powerbank.location}</TableCell>
+                      <TableCell>
+                        <Badge variant={statusColors[effectiveStatus]}>
+                          {getPowerbankStatusLabel(effectiveStatus)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {effectiveStatus === "cooldown" && powerbank.cooldownEndsAt
+                          ? formatDateTime(powerbank.cooldownEndsAt)
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={!isOnline}
+                          onClick={() => handleEdit(powerbank)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}

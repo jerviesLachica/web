@@ -1,10 +1,17 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react"
 
-import { subscribeAuditLogs } from "@/services/firebase/data-service"
+import { subscribeAuditLogs, subscribeRfidTapLogs } from "@/services/firebase/data-service"
 import { useInventoryStore } from "@/stores/inventory-store"
 import { useTelemetryStore } from "@/stores/telemetry-store"
-import type { AuditLog } from "@/types/models"
+import type { AuditLog, RfidTapLog } from "@/types/models"
 import { formatDateTime } from "@/utils/date"
+import {
+  getBatteryTelemetryBadgeVariant,
+  getBatteryTelemetryDetails,
+  getBatteryTelemetryLabel,
+  getBatteryTelemetryStateLabel,
+  isTelemetryOnline,
+} from "@/utils/powerbank"
 import {
   Card,
   CardContent,
@@ -31,21 +38,28 @@ function formatSeconds(seconds: number) {
   return `${minutes}m ${String(remainder).padStart(2, "0")}s`
 }
 
+function formatBatteryPercent(value: number | null) {
+  return value === null ? "-" : `${value}%`
+}
+
 export function MonitoringPage() {
   const powerbanks = useInventoryStore((state) => state.powerbanks)
   const telemetry = useTelemetryStore((state) => state.items)
   const subscribeTelemetryData = useTelemetryStore((state) => state.subscribe)
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [rfidTapLogs, setRfidTapLogs] = useState<RfidTapLog[]>([])
   const [query, setQuery] = useState("")
   const deferredQuery = useDeferredValue(query)
 
   useEffect(() => {
     const unsubTelemetry = subscribeTelemetryData()
     const unsubAuditLogs = subscribeAuditLogs(setAuditLogs)
+    const unsubRfidTapLogs = subscribeRfidTapLogs(setRfidTapLogs)
 
     return () => {
       unsubTelemetry()
       unsubAuditLogs()
+      unsubRfidTapLogs()
     }
   }, [subscribeTelemetryData])
 
@@ -67,7 +81,27 @@ export function MonitoringPage() {
     })
   }, [deferredQuery, powerbanks, telemetry])
 
+  const filteredRfidTapLogs = useMemo(() => {
+    const normalizedQuery = deferredQuery.trim().toLowerCase()
+
+    return rfidTapLogs.filter((item) => {
+      const powerbank = powerbanks.find((powerbankItem) => powerbankItem.id === item.powerbankId)
+
+      return (
+        !normalizedQuery ||
+        item.powerbankId.toLowerCase().includes(normalizedQuery) ||
+        powerbank?.label.toLowerCase().includes(normalizedQuery) ||
+        item.source.toLowerCase().includes(normalizedQuery) ||
+        item.eventType.toLowerCase().includes(normalizedQuery) ||
+        item.result.toLowerCase().includes(normalizedQuery) ||
+        item.tagCode?.toLowerCase().includes(normalizedQuery) ||
+        item.tagName?.toLowerCase().includes(normalizedQuery)
+      )
+    })
+  }, [deferredQuery, powerbanks, rfidTapLogs])
+
   const recentLogs = auditLogs.slice(0, 6)
+  const recentRfidTapLogs = filteredRfidTapLogs.slice(0, 10)
 
   return (
     <div className="space-y-6 text-white">
@@ -85,7 +119,7 @@ export function MonitoringPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {filteredTelemetry.filter((item) => item.online).length}
+                {filteredTelemetry.filter(isTelemetryOnline).length}
             </p>
           </CardContent>
         </Card>
@@ -96,7 +130,7 @@ export function MonitoringPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {filteredTelemetry.filter((item) => !item.online).length}
+                {filteredTelemetry.filter((item) => !isTelemetryOnline(item)).length}
             </p>
           </CardContent>
         </Card>
@@ -153,6 +187,7 @@ export function MonitoringPage() {
               </TableHeader>
               <TableBody>
                 {filteredTelemetry.map((item) => {
+                  const isOnline = isTelemetryOnline(item)
                   const powerbank = powerbanks.find(
                     (powerbankItem) => powerbankItem.id === item.powerbankId
                   )
@@ -163,11 +198,23 @@ export function MonitoringPage() {
                         {powerbank?.label ?? item.powerbankId}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={item.online ? "default" : "destructive"}>
-                          {item.online ? "Online" : "Offline"}
+                        <Badge variant={isOnline ? "default" : "destructive"}>
+                          {isOnline ? "Online" : "Offline"}
                         </Badge>
                       </TableCell>
-                      <TableCell>{item.batteryLevel}%</TableCell>
+                      <TableCell className="whitespace-normal">
+                        <div className="space-y-1">
+                          <p className="font-medium">{getBatteryTelemetryLabel(item)}</p>
+                          <p className="text-xs text-white/48">
+                            {getBatteryTelemetryDetails(item)}
+                          </p>
+                          {item.batteryEstimateState !== "estimated" ? (
+                            <Badge variant={getBatteryTelemetryBadgeVariant(item.batteryEstimateState)}>
+                              {getBatteryTelemetryStateLabel(item.batteryEstimateState)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
                        <TableCell className="font-mono text-sm">
                          {item.firmwareVersion}
                        </TableCell>
@@ -204,6 +251,73 @@ export function MonitoringPage() {
                         )}
                       </TableCell>
                       <TableCell>{item.lastAppliedCommandVersion}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white/[0.04]">
+        <CardHeader>
+          <CardTitle>RFID Tap & Session Logs</CardTitle>
+          <CardDescription>Persistent tap history and battery-loss summaries reported by ESP32 devices</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recentRfidTapLogs.length === 0 ? (
+            <p className="py-4 text-center text-white/50">
+              No RFID tap or session logs have been recorded yet.
+            </p>
+          ) : (
+            <Table className="text-white">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Powerbank</TableHead>
+                  <TableHead>Event</TableHead>
+                  <TableHead>Tag</TableHead>
+                  <TableHead>Battery Start</TableHead>
+                  <TableHead>Battery End</TableHead>
+                  <TableHead>Lost</TableHead>
+                  <TableHead>Retained</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentRfidTapLogs.map((log) => {
+                  const powerbank = powerbanks.find((item) => item.id === log.powerbankId)
+
+                  return (
+                    <TableRow key={log.id}>
+                      <TableCell>{formatDateTime(log.createdAt)}</TableCell>
+                      <TableCell className="font-medium">
+                        {powerbank?.label ?? log.powerbankId}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <Badge variant="secondary">
+                            {log.eventType}: {log.result}
+                          </Badge>
+                          <p className="text-xs text-white/48">Source: {log.source}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {log.tagCode || log.tagName ? (
+                          <div className="space-y-1">
+                            <p className="font-medium">{log.tagName ?? log.tagCode}</p>
+                            {log.tagCode ? (
+                              <p className="font-mono text-xs text-white/48">{log.tagCode}</p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
+                      <TableCell>{formatBatteryPercent(log.batteryPercentBefore)}</TableCell>
+                      <TableCell>{formatBatteryPercent(log.batteryPercentAfter)}</TableCell>
+                      <TableCell>{formatBatteryPercent(log.batteryPercentLost)}</TableCell>
+                      <TableCell>{formatBatteryPercent(log.batteryPercentRetained)}</TableCell>
                     </TableRow>
                   )
                 })}

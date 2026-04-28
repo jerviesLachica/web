@@ -1,7 +1,9 @@
 const TAG_PREFIX = "SUNSAVER:TAG:"
 
+export const MANAGED_NFC_TAG_PREFIX = TAG_PREFIX
+
 type NdefReaderLike = {
-  scan: () => Promise<void>
+  scan: (options?: { signal?: AbortSignal }) => Promise<void>
   write: (message: unknown) => Promise<void>
   onreading: ((event: {
     serialNumber?: string
@@ -29,6 +31,26 @@ export function generateRfidTagCode() {
   return `${TAG_PREFIX}${seed.toUpperCase()}`
 }
 
+function getCompactHardwareUid(value: string) {
+  const upper = value.trim().toUpperCase()
+  const compactHex = upper.replace(/[^0-9A-F]/g, "")
+  const looksLikeHardwareUid =
+    compactHex.length >= 4 &&
+    compactHex.length <= 32 &&
+    compactHex.length % 2 === 0 &&
+    /^[0-9A-F:\-\s]+$/.test(upper)
+
+  return looksLikeHardwareUid ? compactHex : ""
+}
+
+export function isManagedNfcTagCode(value: string) {
+  return value.trim().toUpperCase().startsWith(TAG_PREFIX)
+}
+
+export function isHardwareRfidUidCode(value: string) {
+  return getCompactHardwareUid(value).length > 0
+}
+
 export function normalizeRfidTagCode(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return ""
@@ -38,14 +60,8 @@ export function normalizeRfidTagCode(value: string) {
     return `${TAG_PREFIX}${trimmed.slice(TAG_PREFIX.length).replace(/\s+/g, "").toUpperCase()}`
   }
 
-  const compactHex = upper.replace(/[^0-9A-F]/g, "")
-  const looksLikeHardwareUid =
-    compactHex.length >= 4 &&
-    compactHex.length <= 32 &&
-    compactHex.length % 2 === 0 &&
-    /^[0-9A-F:\-\s]+$/.test(upper)
-
-  if (looksLikeHardwareUid) {
+  const compactHex = getCompactHardwareUid(trimmed)
+  if (compactHex) {
     return compactHex
   }
 
@@ -81,7 +97,7 @@ function extractNfcCode(event: {
   return ""
 }
 
-export async function readNfcTagCode(timeoutMs = 15000) {
+export async function readNfcTagCode(timeoutMs = 15000, signal?: AbortSignal) {
   if (!supportsWebNfc()) {
     throw new Error("Web NFC is only available in supported mobile browsers.")
   }
@@ -89,16 +105,29 @@ export async function readNfcTagCode(timeoutMs = 15000) {
   const reader = new window.NDEFReader!()
 
   return await new Promise<string>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("NFC scan cancelled."))
+      return
+    }
+
     const timeout = window.setTimeout(() => {
       cleanup()
       reject(new Error("NFC read timed out."))
     }, timeoutMs)
 
+    const handleAbort = () => {
+      cleanup()
+      reject(new Error("NFC scan cancelled."))
+    }
+
     const cleanup = () => {
       window.clearTimeout(timeout)
       reader.onreading = null
       reader.onreadingerror = null
+      signal?.removeEventListener("abort", handleAbort)
     }
+
+    signal?.addEventListener("abort", handleAbort, { once: true })
 
     reader.onreadingerror = () => {
       cleanup()
@@ -121,7 +150,7 @@ export async function readNfcTagCode(timeoutMs = 15000) {
       resolve(value)
     }
 
-    reader.scan().catch((error: unknown) => {
+    reader.scan(signal ? { signal } : undefined).catch((error: unknown) => {
       cleanup()
       reject(error instanceof Error ? error : new Error("Failed to start NFC scan."))
     })

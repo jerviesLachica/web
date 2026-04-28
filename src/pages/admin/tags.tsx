@@ -11,6 +11,8 @@ import { rfidTagSchema, type RfidTagValues } from "@/schemas/forms"
 import type { RfidTag } from "@/types/models"
 import {
   generateRfidTagCode,
+  isHardwareRfidUidCode,
+  isManagedNfcTagCode,
   normalizeRfidTagCode,
   supportsWebNfc,
   writeNfcTagCode,
@@ -36,15 +38,6 @@ export function TagsPage() {
   const [writing, setWriting] = useState(false)
   const [query, setQuery] = useState("")
   const deferredQuery = useDeferredValue(query)
-  const webNfcSupported = supportsWebNfc()
-
-  useEffect(() => {
-    const unsubscribe = subscribeInventory()
-    return () => {
-      unsubscribe()
-    }
-  }, [subscribeInventory])
-
   const form = useForm<RfidTagValues>({
     resolver: zodResolver(rfidTagSchema),
     defaultValues: {
@@ -55,6 +48,18 @@ export function TagsPage() {
       status: "active",
     },
   })
+  const webNfcSupported = supportsWebNfc()
+  const watchedCode = form.watch("code")
+  const normalizedCodePreview = normalizeRfidTagCode(watchedCode)
+  const codeIsManagedNfc = isManagedNfcTagCode(normalizedCodePreview)
+  const codeIsHardwareUid = isHardwareRfidUidCode(normalizedCodePreview)
+
+  useEffect(() => {
+    const unsubscribe = subscribeInventory()
+    return () => {
+      unsubscribe()
+    }
+  }, [subscribeInventory])
 
   const filteredTags = useMemo(() => {
     const normalized = deferredQuery.trim().toLowerCase()
@@ -121,6 +126,13 @@ export function TagsPage() {
     try {
       const currentValues = form.getValues()
       const code = normalizeRfidTagCode(currentValues.code) || generateRfidTagCode()
+
+      if (code && !isManagedNfcTagCode(code)) {
+        toast.info(
+          "This writes the code as a browser-readable NFC text payload. The ESP32 MFRC522 reader still only recognizes real hardware UID tags directly."
+        )
+      }
+
       const writtenCode = await writeNfcTagCode(code)
 
       form.setValue("code", writtenCode, { shouldDirty: true, shouldValidate: true })
@@ -151,7 +163,7 @@ export function TagsPage() {
         <div>
           <p className="text-xs uppercase tracking-[0.28em] text-white/42">Admin</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Tags</h1>
-          <p className="mt-2 text-white/55">Manage RFID tags using the physical UID read by the ESP32 hardware.</p>
+          <p className="mt-2 text-white/55">Manage both ESP32-readable MFRC522 UID tags and browser-managed phone NFC codes.</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -161,14 +173,14 @@ export function TagsPage() {
             <DialogHeader>
               <DialogTitle>{editing ? "Edit Tag" : "Add Tag"}</DialogTitle>
               <DialogDescription>
-                Customize tag identity, write a website-managed NFC payload to the tag,
-                and link it to a powerbank so it is ready to use.
+                Link a tag code to a powerbank, or write a phone-readable NFC payload for
+                the website flow. The ESP32 reader itself still requires a real MFRC522 UID.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={onSubmit} className="space-y-4">
                 <FormField control={form.control} name="name" render={({ field }) => <Field><FormLabel>Tag Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></Field>} />
-                <FormField control={form.control} name="code" render={({ field }) => <Field><FormLabel>Tag Code</FormLabel><FormControl><Input {...field} placeholder="Example: 04A1B2C3D4 or SUNSAVER:TAG:ABC123" /></FormControl><p className="mt-2 text-sm text-white/50">For hardware UID tags, enter the MFRC522 UID from the ESP32 log. For Android phone registration, use Write Tag & Register to write a managed NFC payload and save the same code automatically.</p><div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={handleNormalize}>Normalize Code</Button><Button type="button" variant="outline" onClick={handleWriteAndRegister} disabled={writing || saving || !isOnline || !webNfcSupported}><ScanLine className="mr-2 size-4" />{writing ? "Writing Tag..." : editing ? "Rewrite Tag & Update" : "Write Tag & Register"}</Button></div>{!webNfcSupported && <p className="mt-2 text-sm text-amber-300/80">Phone NFC write is available only on supported Android Chrome browsers over HTTPS.</p>}<FormMessage /></Field>} />
+                <FormField control={form.control} name="code" render={({ field }) => <Field><FormLabel>Tag Code</FormLabel><FormControl><Input {...field} placeholder="Example: 04A1B2C3D4 or SUNSAVER:TAG:ABC123" /></FormControl><p className="mt-2 text-sm text-white/50">Use the MFRC522 UID from the ESP32 log for direct hardware scans. Use phone NFC write for Android Chrome website scans that unlock through Firebase commands.</p>{normalizedCodePreview ? <div className="mt-3 flex flex-wrap gap-2">{codeIsHardwareUid ? <Badge variant="default">ESP32 UID Compatible</Badge> : null}{codeIsManagedNfc ? <Badge variant="secondary">Phone Web NFC Managed Code</Badge> : null}{!codeIsHardwareUid && !codeIsManagedNfc ? <Badge variant="secondary">Custom Code</Badge> : null}</div> : null}<p className="mt-2 text-xs text-white/42">Phone-written NFC payloads can trigger the website flow, but the ESP32 MFRC522 reader cannot read those payloads directly unless you are using the real hardware UID tag.</p><div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={handleNormalize}>Normalize Code</Button><Button type="button" variant="outline" onClick={handleWriteAndRegister} disabled={writing || saving || !isOnline || !webNfcSupported}><ScanLine className="mr-2 size-4" />{writing ? "Writing Phone NFC..." : editing ? "Rewrite Phone NFC & Update" : "Write Phone NFC & Register"}</Button></div>{!webNfcSupported && <p className="mt-2 text-sm text-amber-300/80">Phone NFC write is available only on supported Android Chrome browsers over HTTPS.</p>}<FormMessage /></Field>} />
                 <FormField control={form.control} name="powerbankId" render={({ field }) => <Field><FormLabel>Linked Powerbank</FormLabel><FormControl><Select value={field.value || "unassigned"} onValueChange={(value) => field.onChange(value === "unassigned" ? "" : value)}><SelectTrigger className="w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{powerbanks.map((item) => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent></Select></FormControl><FormMessage /></Field>} />
                 <FormField control={form.control} name="notes" render={({ field }) => <Field><FormLabel>Notes</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></Field>} />
                 <FormField control={form.control} name="status" render={({ field }) => <Field><FormLabel>Status</FormLabel><FormControl><Select value={field.value} onValueChange={field.onChange}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="disabled">Disabled</SelectItem></SelectContent></Select></FormControl><FormMessage /></Field>} />

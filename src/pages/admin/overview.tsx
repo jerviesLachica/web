@@ -18,6 +18,7 @@ import {
 import { useInventoryStore } from "@/stores/inventory-store"
 import { useRentalStore } from "@/stores/rental-store"
 import type { AppUser } from "@/types/models"
+import { getEffectivePowerbankStatus } from "@/utils/powerbank"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { BoxesIcon, UsersIcon, ActivityIcon, Settings2Icon } from "lucide-react"
@@ -39,10 +40,18 @@ export function OverviewPage() {
     }
   }, [subscribeRentals])
 
-  const availableCount = powerbanks.filter((p) => p.status === "available").length
-  const rentedCount = powerbanks.filter((p) => p.status === "rented").length
-  const cooldownCount = powerbanks.filter((p) => p.status === "cooldown").length
-  const maintenanceCount = powerbanks.filter((p) => p.status === "maintenance").length
+  const availableCount = powerbanks.filter(
+    (powerbank) => getEffectivePowerbankStatus(powerbank) === "available"
+  ).length
+  const rentedCount = powerbanks.filter(
+    (powerbank) => getEffectivePowerbankStatus(powerbank) === "rented"
+  ).length
+  const cooldownCount = powerbanks.filter(
+    (powerbank) => getEffectivePowerbankStatus(powerbank) === "cooldown"
+  ).length
+  const maintenanceCount = powerbanks.filter(
+    (powerbank) => getEffectivePowerbankStatus(powerbank) === "maintenance"
+  ).length
   const activeRentals = rentals.filter((r) => r.status === "active").length
   const activeUsers = users.filter((u) => u.status === "active").length
   const inventoryChartData = [

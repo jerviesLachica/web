@@ -18,7 +18,20 @@ export function UserLayout() {
   const isAdmin = useIsAdmin()
   const isVerified = useIsVerified()
   const onboardingCompleted = user?.preferences.onboardingCompleted ?? true
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuOpenPath, setMenuOpenPath] = useState<string | null>(null)
+
+  const menuOpen = menuOpenPath === location.pathname
+
+  const toggleMenu = () => {
+    setMenuOpenPath((currentPath) =>
+      currentPath === location.pathname ? null : location.pathname
+    )
+  }
+
+  const navigateAndClose = (path: string) => {
+    setMenuOpenPath(null)
+    navigate(path)
+  }
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -40,10 +53,6 @@ export function UserLayout() {
       navigate("/app", { replace: true })
     }
   }, [isAuthenticated, isVerified, navigate, user, onboardingCompleted, location.pathname])
-
-  useEffect(() => {
-    setMenuOpen(false)
-  }, [location.pathname])
 
   if (!isAuthenticated || !isVerified) {
     return (
@@ -71,18 +80,18 @@ export function UserLayout() {
       <header className="border-b border-white/10 bg-black/20 backdrop-blur-xl md:hidden">
         <div className="flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setMenuOpen(!menuOpen)}>
+            <Button variant="ghost" size="icon" onClick={toggleMenu}>
               <MenuIcon className="w-5 h-5" />
             </Button>
             <span className="text-lg font-semibold tracking-tight">Sunsaver</span>
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
+              <Button variant="ghost" size="sm" onClick={() => navigateAndClose("/admin")}>
                 <ShieldCheckIcon className="w-4 h-4" />
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={() => navigate("/auth/logout")}>
+            <Button variant="ghost" size="icon" onClick={() => navigateAndClose("/auth/logout")}>
               <LogOutIcon className="w-4 h-4" />
             </Button>
           </div>
@@ -97,7 +106,7 @@ export function UserLayout() {
                   key={item.path}
                   variant={isActive ? "secondary" : "ghost"}
                   className="w-full justify-start"
-                  onClick={() => navigate(item.path)}
+                  onClick={() => navigateAndClose(item.path)}
                 >
                   <Icon className="w-4 h-4 mr-2" />
                   {item.label}
@@ -114,7 +123,7 @@ export function UserLayout() {
             <span className="text-xl font-semibold tracking-tight">Sunsaver</span>
             <nav className="flex items-center gap-1">
               {isAdmin && (
-                <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
+                  <Button variant="ghost" size="sm" onClick={() => navigateAndClose("/admin")}>
                   <ShieldCheckIcon className="w-4 h-4 mr-2" />
                   Admin
                 </Button>
@@ -126,7 +135,7 @@ export function UserLayout() {
                     key={item.path}
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigate(item.path)}
+                    onClick={() => navigateAndClose(item.path)}
                   >
                     <Icon className="w-4 h-4 mr-2" />
                     {item.label}
@@ -137,7 +146,7 @@ export function UserLayout() {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-white/55">{user.name}</span>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/auth/logout")}>
+            <Button variant="ghost" size="sm" onClick={() => navigateAndClose("/auth/logout")}>
               <LogOutIcon className="w-4 h-4 mr-2" />
               Logout
             </Button>
@@ -154,7 +163,7 @@ export function UserLayout() {
           <Button
             variant="ghost"
             className="flex-col h-full py-1"
-            onClick={() => navigate("/app")}
+            onClick={() => navigateAndClose("/app")}
           >
             <HomeIcon className="w-5 h-5" />
             <span className="text-xs">Home</span>
@@ -162,7 +171,7 @@ export function UserLayout() {
           <Button
             variant="ghost"
             className="flex-col h-full py-1"
-            onClick={() => navigate("/app/scan")}
+            onClick={() => navigateAndClose("/app/scan")}
           >
             <QrCodeIcon className="w-5 h-5" />
             <span className="text-xs">Scan</span>
@@ -170,7 +179,7 @@ export function UserLayout() {
           <Button
             variant="ghost"
             className="flex-col h-full py-1"
-            onClick={() => navigate("/app/history")}
+            onClick={() => navigateAndClose("/app/history")}
           >
             <HistoryIcon className="w-5 h-5" />
             <span className="text-xs">History</span>
@@ -178,7 +187,7 @@ export function UserLayout() {
           <Button
             variant="ghost"
             className="flex-col h-full py-1"
-            onClick={() => navigate("/app/profile")}
+            onClick={() => navigateAndClose("/app/profile")}
           >
             <UserIcon className="w-5 h-5" />
             <span className="text-xs">Profile</span>

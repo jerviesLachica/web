@@ -1,15 +1,21 @@
 import { format, formatDistanceToNowStrict, isPast } from "date-fns"
 
+function isSupportedDateString(value: string) {
+  return /^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/.test(value)
+}
+
 export function toDate(value?: string | Date | null) {
   if (!value) {
     return null
   }
 
-  if (value instanceof Date) {
-    return value
+  if (typeof value === "string" && !isSupportedDateString(value)) {
+    return null
   }
 
-  return new Date(value)
+  const date = value instanceof Date ? value : new Date(value)
+
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 export function formatDateTime(value?: string | Date | null) {

@@ -69,7 +69,7 @@ export function ProfilePage() {
     try {
       await updateUserProfile(user.id, values)
       toast.success("Profile updated")
-    } catch (error) {
+    } catch {
       toast.error("Failed to update profile")
     } finally {
       setSaving(false)
@@ -87,7 +87,7 @@ export function ProfilePage() {
 
       await updateUserPreferences(user.id, values)
       toast.success("Preferences updated")
-    } catch (error) {
+    } catch {
       toast.error("Failed to update preferences")
     } finally {
       setSaving(false)

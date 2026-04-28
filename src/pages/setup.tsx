@@ -21,10 +21,10 @@ VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
-VITE_FIREBASE_DATABASE_URL=https://your_project.firebaseio.com`}
+VITE_FIREBASE_DATABASE_URL=https://your-project-default-rtdb.your-region.firebasedatabase.app`}
           </pre>
           <p className="text-sm text-muted-foreground">
-            You can obtain these values from the Firebase Console under Project Settings.
+            You can obtain these values from the Firebase Console under Project Settings. For <code>VITE_FIREBASE_DATABASE_URL</code>, copy the Realtime Database instance URL shown in Firebase Console.
           </p>
         </CardContent>
       </Card>

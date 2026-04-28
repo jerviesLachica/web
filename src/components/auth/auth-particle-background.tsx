@@ -40,7 +40,7 @@ export function AuthParticleBackground(): JSX.Element {
 
     const orbs = createOrbs()
     let animationFrameId = 0
-    let startTime = performance.now()
+    const startTime = performance.now()
 
     const resizeCanvas = (): void => {
       const ratio = Math.max(window.devicePixelRatio || 1, 1)

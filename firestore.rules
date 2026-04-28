@@ -12,7 +12,7 @@ service cloud.firestore {
 
     function requesterUser() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
+    }                 
 
     function requesterUserExists() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid));
@@ -32,6 +32,25 @@ service cloud.firestore {
 
     function ownsUser(userId) {
       return signedIn() && request.auth.uid == userId;
+    }
+
+    function isNullableString(value, maxLength) {
+      return value == null || (value is string && value.size() <= maxLength);
+    }
+
+    function isNullablePercent(value) {
+      return value == null || (value is int && value >= 0 && value <= 100);
+    }
+
+    function isNullableTimestamp(value) {
+      return value == null || value is timestamp;
+    }
+
+    function isDeviceForPowerbank(powerbankId) {
+      return signedIn() &&
+        powerbankId is string &&
+        exists(/databases/$(database)/documents/powerbanks/$(powerbankId)) &&
+        get(/databases/$(database)/documents/powerbanks/$(powerbankId)).data.deviceAuthUid == request.auth.uid;
     }
 
     function validProfile(profile) {
@@ -127,11 +146,36 @@ service cloud.firestore {
 
     function validDeviceControl(control) {
       return control is map &&
-        control.keys().hasOnly(["desiredAction", "commandVersion", "updatedAt"]) &&
+        control.keys().hasOnly(["desiredAction", "commandVersion", "updatedAt", "source", "tagCode", "tagName"]) &&
         control.desiredAction in ["idle", "unlock", "lock", "resync"] &&
         control.commandVersion is int &&
         control.commandVersion >= 0 &&
-        control.updatedAt is timestamp;
+        control.updatedAt is timestamp &&
+        control.source in ["rfid", "web_nfc", "manual", "firebase", "command", "system"] &&
+        isNullableString(control.tagCode, 120) &&
+        isNullableString(control.tagName, 80);
+    }
+
+    function validBatteryEstimateState(value) {
+      return value in ["estimated", "out_of_range", "sensor_unavailable"];
+    }
+
+    function validDeviceState(state) {
+      return state is map &&
+        state.keys().hasOnly([
+          "mode",
+          "inventoryStatus",
+          "batteryEstimateState",
+          "updatedAt",
+          "lastEventType",
+          "lastEventResult"
+        ]) &&
+        (!state.keys().hasAny(["mode"]) || (state.mode is string && state.mode.size() <= 40)) &&
+        (!state.keys().hasAny(["inventoryStatus"]) || state.inventoryStatus in ["available", "in_use", "rented", "cooldown", "maintenance", "offline"]) &&
+        (!state.keys().hasAny(["batteryEstimateState"]) || validBatteryEstimateState(state.batteryEstimateState)) &&
+        (!state.keys().hasAny(["updatedAt"]) || isNullableTimestamp(state.updatedAt)) &&
+        (!state.keys().hasAny(["lastEventType"]) || isNullableString(state.lastEventType, 80)) &&
+        (!state.keys().hasAny(["lastEventResult"]) || isNullableString(state.lastEventResult, 80));
     }
 
     function validPowerbankDocument(data) {
@@ -146,7 +190,8 @@ service cloud.firestore {
           "deviceAuthUid",
           "createdAt",
           "updatedAt",
-          "deviceControl"
+          "deviceControl",
+          "deviceState"
         ]) &&
         data.label is string &&
         data.label.size() >= 2 &&
@@ -155,13 +200,14 @@ service cloud.firestore {
         data.location.size() <= 80 &&
         (!data.keys().hasAny(["qrCode"]) || data.qrCode is string) &&
         (!data.keys().hasAny(["rfidTagId"]) || data.rfidTagId is string) &&
-        data.status in ["available", "rented", "cooldown", "maintenance", "offline"] &&
+        data.status in ["available", "in_use", "rented", "cooldown", "maintenance", "offline"] &&
         (data.currentRentalId == null || data.currentRentalId is string) &&
         (data.cooldownEndsAt == null || data.cooldownEndsAt is timestamp) &&
         (data.deviceAuthUid == null || data.deviceAuthUid is string) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
-        validDeviceControl(data.deviceControl);
+        validDeviceControl(data.deviceControl) &&
+        (!data.keys().hasAny(["deviceState"]) || validDeviceState(data.deviceState));
     }
 
     function validTagDocument(data) {
@@ -180,7 +226,10 @@ service cloud.firestore {
         request.resource.data.currentRentalId == null &&
         request.resource.data.cooldownEndsAt == null &&
         request.resource.data.deviceControl.desiredAction == "idle" &&
-        request.resource.data.deviceControl.commandVersion == 0;
+        request.resource.data.deviceControl.commandVersion == 0 &&
+        request.resource.data.deviceControl.source == "system" &&
+        request.resource.data.deviceControl.tagCode == null &&
+        request.resource.data.deviceControl.tagName == null;
     }
 
     function validRentalDocument(data) {
@@ -243,7 +292,8 @@ service cloud.firestore {
         existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         userAfter.data.activeRentalId == null &&
         existsAfter(/databases/$(database)/documents/powerbanks/$(resource.data.powerbankId)) &&
-        powerbankAfter.data.status == "available" &&
+        powerbankAfter.data.status == "cooldown" &&
+        powerbankAfter.data.cooldownEndsAt is timestamp &&
         powerbankAfter.data.currentRentalId == null;
     }
 
@@ -264,8 +314,18 @@ service cloud.firestore {
         request.resource.data.deviceControl.commandVersion == resource.data.deviceControl.commandVersion + 1 &&
         (
           (
-            resource.data.status == "available" &&
-            resource.data.currentRentalId == null &&
+            (
+              (
+                resource.data.status == "available" &&
+                resource.data.currentRentalId == null
+              ) ||
+              (
+                resource.data.status == "cooldown" &&
+                resource.data.currentRentalId == null &&
+                resource.data.cooldownEndsAt is timestamp &&
+                request.time >= resource.data.cooldownEndsAt
+              )
+            ) &&
             request.resource.data.status == "rented" &&
             currentRentalId is string &&
             request.resource.data.cooldownEndsAt == null &&
@@ -278,7 +338,7 @@ service cloud.firestore {
             getAfter(/databases/$(database)/documents/rentals/$(currentRentalId)).data.status == "active"
           ) ||
           (
-            resource.data.status == "rented" &&
+            (resource.data.status == "rented" || resource.data.status == "in_use" || resource.data.status == "available") &&
             previousRentalId is string &&
             request.resource.data.status == "cooldown" &&
             request.resource.data.currentRentalId == null &&
@@ -292,6 +352,24 @@ service cloud.firestore {
             getAfter(/databases/$(database)/documents/rentals/$(previousRentalId)).data.status == "returned"
           )
         );
+    }
+
+    function validDevicePowerbankStateUpdate() {
+      return validPowerbankDocument(request.resource.data) &&
+        request.resource.data.label == resource.data.label &&
+        request.resource.data.location == resource.data.location &&
+        request.resource.data.qrCode == resource.data.qrCode &&
+        request.resource.data.rfidTagId == resource.data.rfidTagId &&
+        request.resource.data.currentRentalId == resource.data.currentRentalId &&
+        request.resource.data.cooldownEndsAt == resource.data.cooldownEndsAt &&
+        request.resource.data.deviceAuthUid == resource.data.deviceAuthUid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.deviceControl == resource.data.deviceControl &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "status",
+          "updatedAt",
+          "deviceState"
+        ]);
     }
 
     function validAuditLog() {
@@ -344,6 +422,55 @@ service cloud.firestore {
         );
     }
 
+    function validRfidTapLog() {
+      return request.resource.data.keys().hasAll([
+          "powerbankId",
+          "source",
+          "eventType",
+          "result",
+          "tagCode",
+          "tagName",
+          "batteryPercentBefore",
+          "batteryPercentAfter",
+          "batteryPercentLost",
+          "batteryPercentRetained",
+          "sessionStartedAt",
+          "sessionEndedAt",
+          "createdAt"
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          "powerbankId",
+          "source",
+          "eventType",
+          "result",
+          "tagCode",
+          "tagName",
+          "batteryPercentBefore",
+          "batteryPercentAfter",
+          "batteryPercentLost",
+          "batteryPercentRetained",
+          "sessionStartedAt",
+          "sessionEndedAt",
+          "createdAt"
+        ]) &&
+        request.resource.data.powerbankId is string &&
+        isDeviceForPowerbank(request.resource.data.powerbankId) &&
+        request.resource.data.source in ["rfid", "web_nfc", "manual", "firebase", "command", "system"] &&
+        request.resource.data.eventType in ["tap", "session_start", "session_end", "command", "status"] &&
+        request.resource.data.result is string &&
+        request.resource.data.result.size() >= 1 &&
+        request.resource.data.result.size() <= 80 &&
+        isNullableString(request.resource.data.tagCode, 120) &&
+        isNullableString(request.resource.data.tagName, 80) &&
+        isNullablePercent(request.resource.data.batteryPercentBefore) &&
+        isNullablePercent(request.resource.data.batteryPercentAfter) &&
+        isNullablePercent(request.resource.data.batteryPercentLost) &&
+        isNullablePercent(request.resource.data.batteryPercentRetained) &&
+        isNullableTimestamp(request.resource.data.sessionStartedAt) &&
+        isNullableTimestamp(request.resource.data.sessionEndedAt) &&
+        request.resource.data.createdAt is timestamp;
+    }
+
     match /users/{userId} {
       allow create: if validUserCreate(userId);
 
@@ -362,7 +489,8 @@ service cloud.firestore {
       allow create: if isAdmin() && validPowerbankCreate();
 
       allow update: if (isAdmin() && validPowerbankDocument(request.resource.data)) ||
-        validPowerbankRentalUpdate(powerbankId);
+        validPowerbankRentalUpdate(powerbankId) ||
+        (isDeviceForPowerbank(powerbankId) && validDevicePowerbankStateUpdate());
 
       allow delete: if false;
     }
@@ -387,6 +515,12 @@ service cloud.firestore {
     match /auditLogs/{logId} {
       allow read: if isAdmin();
       allow create: if validAuditLog();
+      allow update, delete: if false;
+    }
+
+    match /rfidTapLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if validRfidTapLog();
       allow update, delete: if false;
     }
 

@@ -6,6 +6,7 @@ import { useInventoryStore } from "@/stores/inventory-store"
 import { useRentalStore } from "@/stores/rental-store"
 import { isRentalOverdue } from "@/utils/rental"
 import { formatDateTime, formatDurationSince, formatDurationUntil } from "@/utils/date"
+import { isPowerbankAvailable } from "@/utils/powerbank"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,7 @@ export function DashboardPage() {
   const rentals = useRentalStore((state) => state.myRentals)
 
   const activeRental = rentals.find((r) => r.status === "active")
-  const availableCount = powerbanks.filter((p) => p.status === "available").length
+  const availableCount = powerbanks.filter((powerbank) => isPowerbankAvailable(powerbank)).length
   const activePowerbank = activeRental
     ? powerbanks.find((item) => item.id === activeRental.powerbankId)
     : null
